@@ -2,123 +2,38 @@
 
 from __future__ import annotations
 
+import os
 import re
 import unicodedata
 
 import streamlit as st
 from pyswip.prolog import PrologError
 
-from motor_inferencia import MotorInferencia, Respuesta
-
-ALIASES_SINTOMAS = [
-    ("no enciende", "no_enciende"),
-    ("no prende", "no_enciende"),
-    ("no arranca", "no_enciende"),
-    ("no enciende el pc", "no_enciende"),
-    ("no enciende la computadora", "no_enciende"),
-    ("el computador no enciende", "no_enciende"),
-    ("no hay energia", "no_enciende"),
-    ("no tiene corriente", "no_enciende"),
-    ("no da señales de vida", "no_enciende"),
-    ("no arranca el computador", "no_enciende"),
-    ("equipo no enciende", "no_enciende"),
-    ("olor a quemado", "olor_quemado"),
-    ("olor quemado", "olor_quemado"),
-    ("huele a quemado", "olor_quemado"),
-    ("sale humo", "olor_quemado"),
-    ("pantalla negra", "pantalla_negra"),
-    ("pantalla en negro", "pantalla_negra"),
-    ("monitor negro", "pantalla_negra"),
-    ("no muestra imagen", "pantalla_negra"),
-    ("pantalla no se ve", "pantalla_negra"),
-    ("sin imagen", "pantalla_negra"),
-    ("no da video", "pantalla_negra"),
-    ("sin señal en el monitor", "pantalla_negra"),
-    ("monitor sin señal", "pantalla_negra"),
-    ("pantalla azul", "pantalla_azul"),
-    ("pantalla en azul", "pantalla_azul"),
-    ("monitor azul", "pantalla_azul"),
-    ("pantallazo azul", "pantalla_azul"),
-    ("error de pantalla azul", "pantalla_azul"),
-    ("se apaga solo", "apagados_repentinos"),
-    ("se apaga de repente", "apagados_repentinos"),
-    ("apaga solo", "apagados_repentinos"),
-    ("se apaga inesperadamente", "apagados_repentinos"),
-    ("se apaga despues de un rato", "apagados_repentinos"),
-    ("se apaga jugando", "apagados_repentinos"),
-    ("se apaga al jugar", "apagados_repentinos"),
-    ("se apaga cuando juego", "apagados_repentinos"),
-    ("bloquea", "bloqueos"),
-    ("se congela", "bloqueos"),
-    ("se queda congelado", "bloqueos"),
-    ("se queda pegado", "bloqueos"),
-    ("no responde", "bloqueos"),
-    ("deja de responder", "bloqueos"),
-    ("quedarse pegado", "bloqueos"),
-    ("va lento", "lentitud"),
-    ("muy lento", "lentitud"),
-    ("computador lento", "lentitud"),
-    ("computadora lenta", "lentitud"),
-    ("se demora mucho", "lentitud"),
-    ("arranque lento", "arranque_lento"),
-    ("tarda en iniciar", "arranque_lento"),
-    ("demora al arrancar", "arranque_lento"),
-    ("se reinicia solo", "reinicios_aleatorios"),
-    ("reinicios aleatorios", "reinicios_aleatorios"),
-    ("se reinicia de repente", "reinicios_aleatorios"),
-    ("reinicia constantemente", "reinicios_aleatorios"),
-    ("ventilador hace ruido", "ventilador_ruidoso"),
-    ("ventilador ruidoso", "ventilador_ruidoso"),
-    ("ventilador suena duro", "ventilador_ruidoso"),
-    ("ruido del ventilador", "ventilador_ruidoso"),
-    ("ventilador no gira", "ventilador_detenido"),
-    ("ventiladores no giran", "ventilador_detenido"),
-    ("ventilador detenido", "ventilador_detenido"),
-    ("ventiladores giran", "ventiladores_giran"),
-    ("se calienta mucho", "ventilador_ruidoso"),
-    ("se sobrecalienta", "ventilador_ruidoso"),
-    ("temperatura muy alta", "ventilador_ruidoso"),
-    ("equipo muy caliente", "ventilador_ruidoso"),
-    ("disco hace clic", "ruido_clic"),
-    ("hace clic", "ruido_clic"),
-    ("disco hace ruido", "ruido_clic"),
-    ("ruido en el disco duro", "ruido_clic"),
-    ("disco no encontrado", "disco_no_encontrado"),
-    ("no detecta el disco", "disco_no_encontrado"),
-    ("no reconoce el disco duro", "disco_no_encontrado"),
-    ("disco duro no funciona", "disco_no_encontrado"),
-    ("lineas en la pantalla", "lineas_en_pantalla"),
-    ("rayas en la pantalla", "lineas_en_pantalla"),
-    ("pantalla con rayas", "lineas_en_pantalla"),
-    ("parpadea la pantalla", "lineas_en_pantalla"),
-    ("pantalla parpadea", "lineas_en_pantalla"),
-    ("artefactos en pantalla", "artefactos_video"),
-    ("artefactos en la imagen", "artefactos_video"),
-    ("imagen distorsionada", "artefactos_video"),
-    ("pixeles de colores", "artefactos_video"),
-    ("calienta demasiado", "ventilador_ruidoso"),
-    ("se calienta", "ventilador_ruidoso"),
-    ("sobrecalienta", "ventilador_ruidoso"),
-    ("no da imagen", "pantalla_negra"),
-    ("pantalla sin imagen", "pantalla_negra"),
-]
-
-PATRONES_PITIDOS_LIBRES = {
-    "3 pitidos cortos": "tres_cortos",
-    "tres pitidos cortos": "tres_cortos",
-    "1 largo y 2 cortos": "un_largo_dos_cortos",
-    "uno largo y dos cortos": "un_largo_dos_cortos",
-    "1 largo y 3 cortos": "un_largo_tres_cortos",
-    "uno largo y tres cortos": "un_largo_tres_cortos",
-    "pitidos cortos repetidos": "cortos_repetidos",
-    "pitidos repetidos": "cortos_repetidos",
-}
-
+from autenticacion import ROL_EXPERTO, autenticar, cargar_credenciales
+from motor_inferencia import (
+    MARCA_FIN,
+    MARCA_INICIO,
+    AnalisisOracion,
+    MotorInferencia,
+    Respuesta,
+)
+from preprocesamiento import VARIABLES, Preprocesador
 
 @st.cache_resource
 def obtener_motor() -> MotorInferencia:
-    """Mantiene una única instancia del motor Prolog entre recargas de Streamlit."""
-    return MotorInferencia()
+    """Mantiene una única instancia del motor Prolog entre recargas de Streamlit.
+
+    HARDDIAG_BASE_CONOCIMIENTO permite apuntar a otra copia del archivo .pl
+    (por ejemplo, para ensayar la demostración sin tocar la base real).
+    """
+    ruta = os.environ.get("HARDDIAG_BASE_CONOCIMIENTO")
+    return MotorInferencia(ruta) if ruta else MotorInferencia()
+
+
+@st.cache_resource
+def obtener_preprocesador() -> Preprocesador:
+    """Entrena una sola vez el clasificador de lecturas numéricas."""
+    return Preprocesador()
 
 
 NOMBRES_DIAGNOSTICO = {
@@ -162,6 +77,7 @@ NOMBRES_PATRON_PITIDOS = {
 NOMBRES_TIPO_EQUIPO = {
     "escritorio": "computador de escritorio",
     "portatil": "computador portátil",
+    "desconocido": "equipo de tipo no indicado",
 }
 GUIAS_SOLUCION = {
     "fuente_poder_defectuosa": {
@@ -294,157 +210,325 @@ ESTADOS = {
 }
 
 
-def normalizar_texto_libre(texto: str) -> str:
-    """Reduce texto libre a una versión normalizada para comparar patrones."""
-    texto_normal = unicodedata.normalize("NFKD", texto.lower())
-    texto_normal = "".join(ch for ch in texto_normal if not unicodedata.combining(ch))
-    texto_normal = re.sub(r"[^a-z0-9°\s]+", " ", texto_normal)
-    return re.sub(r"\s+", " ", texto_normal).strip()
+def analizar_descripcion(texto: str) -> AnalisisOracion:
+    """Envía la descripción libre a la DCG de Prolog (``parsear_oracion_texto/3``)."""
+    if not texto.strip():
+        return AnalisisOracion()
+    return obtener_motor().parsear_oracion(texto)
 
 
-def detectar_equipo_desde_texto(texto: str) -> str | None:
-    """Detecta si el usuario describió un portátil o un PC de escritorio."""
-    texto_normal = normalizar_texto_libre(texto)
-    if any(pat in texto_normal for pat in ("portatil", "laptop", "notebook", "portable")):
-        return "portatil"
-    if any(
-        pat in texto_normal
-        for pat in ("escritorio", "desktop", "torre", "pc de mesa", "computador de mesa", "computadora de mesa")
-    ):
-        return "escritorio"
-    return None
+def nombre_diagnostico(codigo: str) -> str:
+    """Nombre legible de un diagnóstico base o aprendido por el experto."""
+    if codigo in NOMBRES_DIAGNOSTICO:
+        return NOMBRES_DIAGNOSTICO[codigo]
+    for regla in obtener_motor().listar_reglas_aprendidas():
+        if regla.id == codigo:
+            return regla.nombre
+    return codigo.replace("_", " ").capitalize()
 
 
-def detectar_temperatura_desde_texto(texto: str) -> int | None:
-    """Extrae temperatura en grados Celsius si la menciona el usuario."""
-    texto_normal = normalizar_texto_libre(texto)
-    coincidencia = re.search(r"(\d{2,3})\s*(?:grados|celsius|centigrados|°)", texto_normal)
+def describir_condicion(condicion: str) -> str:
+    """Traduce una condición de regla aprendida a una frase en español."""
+    if condicion == "temp_cpu_alta":
+        return "Temperatura del procesador sobre el umbral"
+    if condicion == "equipo_antiguo":
+        return "Equipo con antigüedad crítica"
+    coincidencia = re.fullmatch(r"pitidos\(([^)]+)\)", condicion)
     if coincidencia:
-        return int(coincidencia.group(1))
-    return None
+        return "Pitidos: " + nombre_dato(coincidencia.group(1), NOMBRES_PATRON_PITIDOS)
+    coincidencia = re.fullmatch(r"prueba\(([^,]+),\s*([^)]+)\)", condicion)
+    if coincidencia:
+        prueba, resultado = coincidencia.groups()
+        return (f"Prueba «{nombre_dato(prueba, NOMBRES_PRUEBA)}»: "
+                f"{nombre_dato(resultado, NOMBRES_RESULTADO).lower()}")
+    return nombre_dato(condicion, DESCRIPCIONES_SINTOMA)
 
 
-def detectar_pitidos_desde_texto(texto: str) -> str | None:
-    """Detecta patrones de pitidos en lenguaje natural."""
-    texto_normal = normalizar_texto_libre(texto)
-    for patron, valor in PATRONES_PITIDOS_LIBRES.items():
-        if patron in texto_normal:
-            return valor
-    return None
+def describir_hecho_dcg(hecho: str) -> str:
+    """Etiqueta corta para un hecho extraído por la DCG."""
+    coincidencia = re.fullmatch(r"temp_cpu\((\d+)\)", hecho)
+    if coincidencia:
+        return f"Temperatura {coincidencia.group(1)} °C"
+    coincidencia = re.fullmatch(r"equipo\(([^,]+),\s*(\d+)\)", hecho)
+    if coincidencia:
+        tipo, anios = coincidencia.groups()
+        return f"{nombre_dato(tipo, NOMBRES_TIPO_EQUIPO).capitalize()}, {anios} años"
+    return describir_condicion(hecho)
 
 
-def obtener_aliases_aprendidos() -> dict[str, str]:
-    """Carga los alias dinámicos aprendidos por el modo experto."""
-    motor = obtener_motor()
-    return {
-        frase: sintoma
-        for sintoma, frase in motor.listar_aliases_aprendidos()
-    }
+def generar_identificador(nombre: str) -> str:
+    """Propone un átomo Prolog válido a partir del nombre legible."""
+    texto = unicodedata.normalize("NFKD", nombre.lower())
+    texto = "".join(ch for ch in texto if not unicodedata.combining(ch))
+    texto = re.sub(r"[^a-z0-9]+", "_", texto).strip("_")
+    if texto and not texto[0].isalpha():
+        texto = "diag_" + texto
+    return texto[:60]
+
+
+def bloque_persistido(motor: MotorInferencia) -> str:
+    """Lee del archivo .pl el bloque de conocimiento aprendido (evidencia)."""
+    try:
+        with open(motor.ruta_base, encoding="utf-8") as archivo:
+            texto = archivo.read()
+    except OSError as error:
+        return f"No se pudo leer el archivo: {error}"
+    inicio = texto.find(MARCA_INICIO)
+    fin = texto.find(MARCA_FIN)
+    if inicio == -1 or fin == -1:
+        return "(el archivo todavía no tiene bloque de conocimiento aprendido)"
+    return texto[inicio:fin + len(MARCA_FIN)]
+
+
+def mostrar_login_experto() -> None:
+    """Formulario de acceso: solo el rol «experto» ve el panel de conocimiento."""
+    st.markdown('<div class="section-kicker">Acceso restringido</div>', unsafe_allow_html=True)
+    st.markdown("## Iniciar sesión como experto")
+    st.markdown(
+        '<p class="section-intro">El panel de adquisición de conocimiento modifica la '
+        'base Prolog. Solo un usuario con rol <b>Experto</b> puede usarlo.</p>',
+        unsafe_allow_html=True,
+    )
+    if cargar_credenciales() is None:
+        st.warning(
+            "No hay credenciales de experto configuradas. Ejecuta "
+            "`py autenticacion.py --configurar` y vuelve a cargar la página."
+        )
+        return
+    with st.form("harddiag_form_login"):
+        usuario = st.text_input("Usuario")
+        contrasena = st.text_input("Contraseña", type="password")
+        entrar = st.form_submit_button("Ingresar", type="primary", use_container_width=True)
+    if entrar:
+        rol = autenticar(usuario, contrasena)
+        if rol == ROL_EXPERTO:
+            st.session_state["harddiag_rol"] = rol
+            st.session_state["harddiag_usuario"] = usuario.strip()
+            st.rerun()
+        else:
+            st.error("Usuario o contraseña incorrectos.")
 
 
 def mostrar_panel_experto(
     motor: MotorInferencia,
     opciones_sintomas: dict[str, str],
 ) -> None:
-    """Presenta las herramientas de vocabulario fuera del flujo de diagnóstico."""
+    """Panel de adquisición dinámica de conocimiento (rol experto)."""
     st.markdown('<div class="section-kicker">Administración del conocimiento</div>', unsafe_allow_html=True)
     st.markdown("## Centro experto")
     st.markdown(
-        '<p class="section-intro">Enseña al sistema nuevas formas de describir fallas '
-        'y administra las frases personalizadas.</p>',
+        '<p class="section-intro">Crea diagnósticos nuevos y enseña vocabulario. Cada cambio '
+        'se inyecta en caliente con <code>assertz/1</code> y se escribe en '
+        '<code>base_conocimiento.pl</code>, así que se conserva al reiniciar.</p>',
         unsafe_allow_html=True,
     )
-    st.info(
-        "El modo experto amplía el vocabulario de entrada. Para agregar una falla o "
-        "diagnóstico nuevo hacen falta reglas de inferencia revisadas en la base Prolog."
-    )
 
+    reglas = motor.listar_reglas_aprendidas()
     alias_actuales = motor.listar_aliases_aprendidos()
-    columna_total, columna_sintomas = st.columns(2)
-    columna_total.metric("Frases personalizadas", len(alias_actuales))
-    columna_sintomas.metric("Síntomas disponibles", len(opciones_sintomas))
+    col_reglas, col_alias, col_sintomas = st.columns(3)
+    col_reglas.metric("Reglas aprendidas", len(reglas))
+    col_alias.metric("Frases personalizadas", len(alias_actuales))
+    col_sintomas.metric("Síntomas disponibles", len(opciones_sintomas))
 
-    with st.container(border=True):
-        st.markdown("### Enseñar una frase nueva")
-        with st.form("harddiag_form_aprender_alias", clear_on_submit=True):
-            nueva_frase = st.text_input(
-                "Cómo describiría el usuario la falla",
-                placeholder="Ejemplo: el monitor muestra rayas de colores",
-                max_chars=120,
-            ).strip()
-            sintoma_aprendido = st.selectbox(
-                "Síntoma conocido que mejor representa la frase",
-                options=sorted(opciones_sintomas),
-                format_func=lambda nombre: opciones_sintomas[nombre],
+    pestana_regla, pestana_lista, pestana_alias = st.tabs(
+        ["Nuevo diagnóstico", "Reglas aprendidas", "Vocabulario"]
+    )
+    with pestana_regla:
+        mostrar_formulario_regla(motor, opciones_sintomas)
+    with pestana_lista:
+        mostrar_reglas_aprendidas(motor, reglas)
+    with pestana_alias:
+        mostrar_vocabulario(motor, opciones_sintomas, alias_actuales)
+
+
+def mostrar_formulario_regla(
+    motor: MotorInferencia,
+    opciones_sintomas: dict[str, str],
+) -> None:
+    componentes = dict(motor.listar_componentes())
+    especiales = motor.listar_condiciones_especiales()
+    todas = [*opciones_sintomas, *especiales]
+
+    st.markdown("### Crear un diagnóstico nuevo")
+    st.caption(
+        "La regla se guarda como regla_aprendida/8 y la evalúa la regla genérica R26: "
+        "el diagnóstico aparece en los resultados, en la explicación y en las sugerencias "
+        "igual que los diagnósticos originales."
+    )
+    with st.form("harddiag_form_regla", clear_on_submit=False):
+        nombre = st.text_input(
+            "Nombre del diagnóstico",
+            placeholder="Ejemplo: Fuente de poder sobrecargada",
+            max_chars=120,
+        ).strip()
+        identificador = st.text_input(
+            "Identificador Prolog (opcional)",
+            placeholder="Se genera a partir del nombre, por ejemplo fuente_sobrecargada",
+            help="Átomo de Prolog: minúsculas, números y guion bajo; debe empezar con una letra.",
+            max_chars=60,
+        ).strip()
+        componente = st.selectbox(
+            "Componente afectado",
+            options=list(componentes),
+            format_func=lambda c: componentes[c],
+        )
+        requeridos = st.multiselect(
+            "Síntomas requeridos (todos deben estar presentes)",
+            options=list(opciones_sintomas),
+            format_func=lambda s: opciones_sintomas[s],
+        )
+        adicionales = st.multiselect(
+            "Condiciones adicionales requeridas (opcional)",
+            options=especiales,
+            format_func=describir_condicion,
+        )
+        excluyentes = st.multiselect(
+            "Condiciones que excluyen el diagnóstico (opcional)",
+            options=todas,
+            format_func=describir_condicion,
+        )
+        columna_certeza, columna_gravedad = st.columns(2)
+        certeza = columna_certeza.radio("Certeza", ["alta", "media"], horizontal=True)
+        gravedad = columna_gravedad.select_slider(
+            "Gravedad / nivel de daño", options=["baja", "media", "alta"], value="media"
+        )
+        accion = st.text_area(
+            "Acción o solución recomendada",
+            placeholder="Ejemplo: Revisar el consumo del equipo y reemplazar la fuente por una de mayor potencia.",
+            max_chars=400,
+        ).strip()
+        guardar = st.form_submit_button(
+            "Inyectar regla y guardarla en el .pl", type="primary", use_container_width=True
+        )
+
+    if guardar:
+        id_final = identificador or generar_identificador(nombre)
+        try:
+            regla = motor.crear_regla(
+                id_final, nombre, componente, requeridos + adicionales,
+                excluyentes, certeza, gravedad, accion,
             )
-            guardar = st.form_submit_button(
-                "Guardar frase para futuros diagnósticos",
-                type="primary",
-                use_container_width=True,
-            )
-
-        if guardar:
-            if not nueva_frase:
-                st.warning("Escribe una frase antes de guardarla.")
-            else:
-                try:
-                    guardado = motor.aprender_alias(nueva_frase, sintoma_aprendido)
-                except (OSError, ValueError, PrologError, RuntimeError) as error:
-                    st.error(f"No se pudo guardar la frase: {error}")
-                else:
-                    if guardado:
-                        st.success(
-                            f"Aprendida: «{nueva_frase}» → "
-                            f"{opciones_sintomas[sintoma_aprendido]}. "
-                            "Ya se puede usar en el diagnóstico normal."
-                        )
-                    else:
-                        st.warning(
-                            "No se guardó: esa frase ya está asociada con otro síntoma "
-                            "o la asociación no es válida."
-                        )
-
-    with st.container(border=True):
-        st.markdown("### Frases personalizadas")
-        if not alias_actuales:
-            st.caption("Aún no se han agregado frases personalizadas.")
+        except ValueError as error:
+            st.error(str(error))
+        except (OSError, PrologError, RuntimeError) as error:
+            st.error(f"No se pudo guardar la regla: {error}")
         else:
-            for sintoma, frase in alias_actuales:
-                st.write(f"- **{frase}** → {opciones_sintomas.get(sintoma, sintoma)}")
-
-            frase_eliminar = st.selectbox(
-                "Selecciona una frase para eliminar",
-                options=[frase for _, frase in alias_actuales],
-                key="harddiag_alias_a_eliminar",
+            st.success(
+                f"Regla «{regla.nombre}» ({regla.id}) inyectada con assertz/1 y escrita en "
+                "base_conocimiento.pl. Ya participa en el diagnóstico normal."
             )
-            if st.button("Eliminar frase seleccionada", key="harddiag_eliminar_alias"):
+            st.code(
+                f"regla_aprendida({regla.id}, '{regla.nombre}', {regla.componente},\n"
+                f"    [{', '.join(regla.requeridas)}],\n"
+                f"    [{', '.join(regla.excluyentes)}],\n"
+                f"    {regla.certeza}, {regla.gravedad}, '{regla.accion}').",
+                language="prolog",
+            )
+
+
+def mostrar_reglas_aprendidas(motor: MotorInferencia, reglas: list) -> None:
+    st.markdown("### Reglas aprendidas")
+    if not reglas:
+        st.caption("Aún no se han creado diagnósticos nuevos.")
+    for regla in reglas:
+        with st.container(border=True):
+            st.markdown(f"**{regla.nombre}** · `{regla.id}`")
+            st.write(
+                f"Componente: {NOMBRES_COMPONENTE.get(regla.componente, regla.componente)} · "
+                f"certeza {regla.certeza} · gravedad {regla.gravedad}"
+            )
+            st.write("Requiere: " + "; ".join(describir_condicion(c) for c in regla.requeridas))
+            if regla.excluyentes:
+                st.write("Se excluye si: " + "; ".join(
+                    describir_condicion(c) for c in regla.excluyentes))
+            st.caption(f"Acción: {regla.accion}")
+            if st.button("Eliminar esta regla", key=f"harddiag_eliminar_regla_{regla.id}"):
                 try:
-                    eliminada = motor.eliminar_alias_aprendido(frase_eliminar)
-                except (OSError, ValueError, PrologError, RuntimeError) as error:
-                    st.error(f"No se pudo eliminar la frase: {error}")
+                    eliminada = motor.eliminar_regla(regla.id)
+                except (OSError, PrologError, RuntimeError) as error:
+                    st.error(f"No se pudo eliminar la regla: {error}")
                 else:
                     if eliminada:
-                        st.success(f"Se eliminó la frase «{frase_eliminar}».")
+                        st.session_state.pop("harddiag_ultima_respuesta", None)
                         st.rerun()
-                    else:
-                        st.error("La frase no está guardada como aprendizaje personalizado.")
+                    st.error("La regla ya no existe.")
+
+    with st.expander("Ver el bloque persistido en base_conocimiento.pl"):
+        st.code(bloque_persistido(motor), language="prolog")
 
 
-def extraer_sintomas_libres(texto: str) -> list[str]:
-    """Convierte frases normales de hardware a síntomas del catálogo conocido."""
-    resultado: list[str] = []
-    texto_normal = normalizar_texto_libre(texto)
-    if not texto_normal:
-        return resultado
-    for patron, sintoma in ALIASES_SINTOMAS:
-        patron_normal = normalizar_texto_libre(patron)
-        if patron_normal in texto_normal and sintoma not in resultado:
-            resultado.append(sintoma)
-    for alias, sintoma in obtener_aliases_aprendidos().items():
-        alias_normal = normalizar_texto_libre(alias)
-        if alias_normal and alias_normal in texto_normal and sintoma not in resultado:
-            resultado.append(sintoma)
-    return resultado
+def mostrar_vocabulario(
+    motor: MotorInferencia,
+    opciones_sintomas: dict[str, str],
+    alias_actuales: list[tuple[str, str]],
+) -> None:
+    st.markdown("### Enseñar una frase nueva")
+    st.caption(
+        "Las frases se guardan como alias_aprendido/2 y la DCG las reconoce como una "
+        "secuencia de palabras dentro de cualquier oración."
+    )
+    with st.form("harddiag_form_aprender_alias", clear_on_submit=True):
+        nueva_frase = st.text_input(
+            "Cómo describiría el usuario la falla",
+            placeholder="Ejemplo: el monitor muestra rayas de colores",
+            max_chars=120,
+        ).strip()
+        sintoma_aprendido = st.selectbox(
+            "Síntoma conocido que mejor representa la frase",
+            options=sorted(opciones_sintomas),
+            format_func=lambda nombre: opciones_sintomas[nombre],
+        )
+        guardar = st.form_submit_button(
+            "Guardar frase para futuros diagnósticos",
+            type="primary",
+            use_container_width=True,
+        )
+
+    if guardar:
+        if not nueva_frase:
+            st.warning("Escribe una frase antes de guardarla.")
+        else:
+            try:
+                guardado = motor.aprender_alias(nueva_frase, sintoma_aprendido)
+            except (OSError, ValueError, PrologError, RuntimeError) as error:
+                st.error(f"No se pudo guardar la frase: {error}")
+            else:
+                if guardado:
+                    st.success(
+                        f"Aprendida: «{nueva_frase}» → "
+                        f"{opciones_sintomas[sintoma_aprendido]}. "
+                        "Ya se puede usar en el diagnóstico normal."
+                    )
+                    alias_actuales = motor.listar_aliases_aprendidos()
+                else:
+                    st.warning(
+                        "No se guardó: esa frase ya está asociada con otro síntoma "
+                        "o la asociación no es válida."
+                    )
+
+    st.markdown("### Frases personalizadas")
+    if not alias_actuales:
+        st.caption("Aún no se han agregado frases personalizadas.")
+        return
+    for sintoma, frase in alias_actuales:
+        st.write(f"- **{frase}** → {opciones_sintomas.get(sintoma, sintoma)}")
+
+    frase_eliminar = st.selectbox(
+        "Selecciona una frase para eliminar",
+        options=[frase for _, frase in alias_actuales],
+        key="harddiag_alias_a_eliminar",
+    )
+    if st.button("Eliminar frase seleccionada", key="harddiag_eliminar_alias"):
+        try:
+            eliminada = motor.eliminar_alias_aprendido(frase_eliminar)
+        except (OSError, ValueError, PrologError, RuntimeError) as error:
+            st.error(f"No se pudo eliminar la frase: {error}")
+        else:
+            if eliminada:
+                st.success(f"Se eliminó la frase «{frase_eliminar}».")
+                st.rerun()
+            else:
+                st.error("La frase no está guardada como aprendizaje personalizado.")
 
 
 def nombre_dato(codigo: str, nombres: dict[str, str]) -> str:
@@ -504,6 +588,12 @@ def presentar_hecho(hecho: str) -> str:
     if coincidencia:
         return f"Umbral de antigüedad utilizado: {coincidencia.group(1)} años."
 
+    coincidencia = re.fullmatch(r"dato\(([^,]+),\s*([^)]+)\)", hecho)
+    if coincidencia:
+        variable, nivel = coincidencia.groups()
+        nombre = VARIABLES.get(variable, (variable.replace("_", " "),))[0]
+        return f"Clasificador numérico: {nombre.lower()} en nivel «{nivel}»."
+
     return hecho.replace("_", " ").capitalize()
 
 
@@ -522,6 +612,12 @@ def presentar_negacion(texto: str) -> str:
         )
     if texto.startswith("R25:"):
         return "Con los datos ingresados no se pudo obtener una conclusión final."
+    if texto.startswith("R26: \\+ descartado"):
+        return "No se encontró una prueba que descarte este diagnóstico aprendido."
+    coincidencia = re.match(r"R26: \\\+ (.+?) tuvo éxito", texto)
+    if coincidencia:
+        return (f"No está presente «{describir_condicion(coincidencia.group(1))}», "
+                "la condición que excluye esta regla aprendida.")
     return texto.replace("\\+", "no").replace("_", " ")
 
 
@@ -529,8 +625,7 @@ def presentar_alternativa(texto: str) -> str:
     diagnostico, separador, razon = texto.partition(": ")
     if not separador:
         return texto
-    nombre = nombre_dato(diagnostico, NOMBRES_DIAGNOSTICO)
-    return f"{nombre}: {razon}"
+    return f"{nombre_diagnostico(diagnostico)}: {razon}"
 
 
 def sintomas_seguimiento_lentitud(respuestas: dict[int, str]) -> list[str]:
@@ -544,42 +639,26 @@ def sintomas_seguimiento_lentitud(respuestas: dict[int, str]) -> list[str]:
 
 def preparar_entrada(
     sintomas: list[str],
-    adicionales: str,
+    analisis: AnalisisOracion,
     temperatura: int | None,
     pitidos: str | None,
     tipo_equipo: str | None,
     antiguedad: int | None,
     pruebas: list[tuple[str, str]],
+    discretos: list[str],
 ) -> list[str]:
-    """Limpia y convierte los controles del formulario en términos Prolog permitidos."""
-    sintomas_validos = {nombre for nombre, _ in obtener_motor().listar_sintomas()}
-    sintomas_extra = [elemento.strip() for elemento in adicionales.split(",") if elemento.strip()]
-    sintomas_libres = []
-    for elemento in sintomas_extra:
-        sintomas_libres.extend(extraer_sintomas_libres(elemento))
+    """Une los controles del formulario con los hechos que extrajo la DCG.
 
-    equipo_detectado = detectar_equipo_desde_texto(adicionales)
-    temperatura_detectada = detectar_temperatura_desde_texto(adicionales)
-    pitidos_detectado = detectar_pitidos_desde_texto(adicionales)
-
-    if temperatura is None and temperatura_detectada is not None:
-        temperatura = temperatura_detectada
-    if pitidos is None and pitidos_detectado is not None:
-        pitidos = pitidos_detectado
-    if tipo_equipo is None and equipo_detectado is not None:
-        tipo_equipo = equipo_detectado
-
-    entrada_refinada = []
-    for item in sintomas + sintomas_extra + sintomas_libres:
-        valor = item.strip()
-        if valor and valor not in entrada_refinada:
-            entrada_refinada.append(valor)
-
-    desconocidos = sorted({valor for valor in entrada_refinada if valor not in sintomas_validos})
-    if desconocidos:
-        entrada_refinada = [valor for valor in entrada_refinada if valor in sintomas_validos]
-
-    entrada = list(dict.fromkeys(entrada_refinada))
+    Si el formulario y la descripción libre informan el mismo dato
+    (temperatura, pitidos o equipo), prevalece el valor del formulario.
+    """
+    hechos_dcg = [
+        hecho for hecho in analisis.hechos
+        if not (temperatura is not None and hecho.startswith("temp_cpu("))
+        and not (pitidos and hecho.startswith("pitidos("))
+        and not (tipo_equipo and antiguedad is not None and hecho.startswith("equipo("))
+    ]
+    entrada = list(dict.fromkeys([*sintomas, *hechos_dcg]))
     if temperatura is not None:
         entrada.append(f"temp_cpu({temperatura})")
     if pitidos:
@@ -588,7 +667,17 @@ def preparar_entrada(
         entrada.append(f"prueba({nombre}, {resultado})")
     if tipo_equipo and antiguedad is not None:
         entrada.append(f"equipo({tipo_equipo}, {antiguedad})")
-    return entrada
+    entrada.extend(discretos)
+    return list(dict.fromkeys(entrada))
+
+
+def lectura_desde_dcg(analisis: AnalisisOracion, patron: str) -> int | None:
+    """Recupera un número (temperatura o antigüedad) extraído por la DCG."""
+    for hecho in analisis.hechos:
+        coincidencia = re.fullmatch(patron, hecho)
+        if coincidencia:
+            return int(coincidencia.group(1))
+    return None
 
 
 def mostrar_resultado(respuesta: Respuesta) -> None:
@@ -610,11 +699,22 @@ def mostrar_resultado(respuesta: Respuesta) -> None:
     )
     st.info(f"{icono} **{mensaje}.**")
 
+    entrada = st.session_state.get("harddiag_ultima_entrada")
+    if entrada or respuesta.hechos_dcg:
+        with st.expander("Ver lo que se envió a Prolog"):
+            if respuesta.hechos_dcg:
+                st.markdown("**Hechos extraídos por la DCG:** " + ", ".join(
+                    f"`{hecho}`" for hecho in respuesta.hechos_dcg))
+            if respuesta.no_reconocidas:
+                st.markdown("**Palabras no reconocidas:** " + ", ".join(respuesta.no_reconocidas))
+            if entrada:
+                st.code(f"analizar_caso([{', '.join(entrada)}], Reporte).", language="prolog")
+
     if respuesta.diagnosticos:
         if len(respuesta.diagnosticos) > 1:
             st.caption("Las hipótesis están ordenadas por prioridad y evidencia.")
         for indice, diagnostico in enumerate(respuesta.diagnosticos, start=1):
-            nombre = NOMBRES_DIAGNOSTICO.get(diagnostico.nombre, diagnostico.nombre)
+            nombre = nombre_diagnostico(diagnostico.nombre)
             with st.container(border=True):
                 st.markdown(f"### {indice}. {nombre}")
                 col_danio, col_severidad, col_certeza, col_prioridad = st.columns(4)
@@ -700,7 +800,7 @@ def mostrar_resultado(respuesta: Respuesta) -> None:
                 st.write(sugerencia.razon)
                 if sugerencia.hipotesis:
                     hipotesis = [
-                        NOMBRES_DIAGNOSTICO.get(nombre, nombre)
+                        nombre_diagnostico(nombre)
                         for nombre in sugerencia.hipotesis
                     ]
                     st.caption("Esta comprobación ayuda a diferenciar: " + " · ".join(hipotesis))
@@ -943,7 +1043,7 @@ def main() -> None:
             "Identifica posibles fallas de hardware a partir de síntomas,\n"
             "            pruebas y condiciones del equipo. Recibe hipótesis explicadas y\n"
             "            recomendaciones seguras para continuar.",
-            "Administra las frases que el sistema reconoce y amplía el vocabulario\n"
+            "Crea diagnósticos nuevos en caliente y amplía el vocabulario de la gramática\n"
             "            usado en las consultas de diagnóstico.",
         ).replace(
             '<div class="workflow">\n'
@@ -955,7 +1055,7 @@ def main() -> None:
         )
     st.markdown(hero, unsafe_allow_html=True)
     if st.session_state["harddiag_modo"] == "experto":
-        st.write("Administra el vocabulario aprendido; el diagnóstico normal queda en una vista separada.")
+        st.write("Panel exclusivo del rol Experto; el diagnóstico normal queda en una vista separada.")
     else:
         st.write(
             "Empieza por contar qué le sucede al computador. Los datos adicionales son opcionales."
@@ -978,9 +1078,24 @@ def main() -> None:
 
     opciones_sintomas = {nombre: descripcion for nombre, descripcion in sintomas_catalogo}
     if st.session_state["harddiag_modo"] == "experto":
-        if st.button("← Volver al diagnóstico normal", key="harddiag_volver_normal"):
-            st.session_state["harddiag_modo"] = "normal"
-            st.rerun()
+        columna_volver, columna_sesion = st.columns([3, 1])
+        with columna_volver:
+            if st.button("← Volver al diagnóstico normal", key="harddiag_volver_normal"):
+                st.session_state["harddiag_modo"] = "normal"
+                st.rerun()
+        if st.session_state.get("harddiag_rol") != ROL_EXPERTO:
+            mostrar_login_experto()
+            return
+        with columna_sesion:
+            if st.button("Cerrar sesión", key="harddiag_cerrar_sesion", use_container_width=True):
+                st.session_state.pop("harddiag_rol", None)
+                st.session_state.pop("harddiag_usuario", None)
+                st.session_state["harddiag_modo"] = "normal"
+                st.rerun()
+        st.caption(
+            f"Sesión iniciada como **{st.session_state.get('harddiag_usuario', 'experto')}** "
+            "(rol Experto)."
+        )
         mostrar_panel_experto(motor, opciones_sintomas)
         return
 
@@ -1022,20 +1137,31 @@ def main() -> None:
             height=120,
             key="harddiag_descripcion_falla",
         )
-        sintomas_libres = extraer_sintomas_libres(adicionales)
-        if adicionales.strip() and not sintomas_libres:
+        try:
+            analisis = analizar_descripcion(adicionales)
+        except (PrologError, RuntimeError) as error:
+            st.error(f"La gramática de Prolog no pudo analizar la descripción: {error}")
+            analisis = AnalisisOracion()
+        sintomas_libres = [hecho for hecho in analisis.hechos if hecho in opciones_sintomas]
+        if adicionales.strip() and not analisis.hechos:
             st.info(
-                "La descripción quedó registrada. Aún no se relaciona con un síntoma conocido, "
-                "así que no se inventará un diagnóstico. Un experto puede agregar esa frase "
-                "en la sección de aprendizaje."
+                "La descripción quedó registrada. La gramática (DCG) no encontró síntomas "
+                "conocidos, así que no se inventará un diagnóstico. Un experto puede enseñar "
+                "esa frase en el modo experto."
             )
-        elif sintomas_libres:
+        elif analisis.hechos:
+            st.markdown(
+                "**Hechos extraídos por la DCG de Prolog:** "
+                + " · ".join(f"`{hecho}`" for hecho in analisis.hechos)
+            )
             st.caption(
-                "Síntomas reconocidos: "
-                + " · ".join(
-                    opciones_sintomas.get(sintoma, sintoma)
-                    for sintoma in sintomas_libres
-                )
+                "Interpretación: "
+                + " · ".join(describir_hecho_dcg(hecho) for hecho in analisis.hechos)
+            )
+        if analisis.no_reconocidas:
+            st.caption(
+                "Palabras que la gramática no reconoció: "
+                + ", ".join(analisis.no_reconocidas)
             )
 
         presenta_lentitud = "lentitud" in elegidos or "lentitud" in sintomas_libres
@@ -1197,6 +1323,58 @@ def main() -> None:
                 else:
                     resultados_pendientes.append(NOMBRES_PRUEBA[nombre])
 
+    # Pre-procesamiento numérico: las lecturas continuas (del formulario o de
+    # la descripción libre) se discretizan en Python antes de ir a Prolog.
+    horas_uso = None
+    uso_disco = None
+    discretos: list[str] = []
+    with st.expander("Lecturas numéricas (clasificador ligero)", expanded=False):
+        st.caption(
+            "Un árbol de decisión de scikit-learn convierte valores continuos en hechos "
+            "discretos dato(Variable, Nivel) antes de enviarlos a Prolog. También usa la "
+            "temperatura y la antigüedad de arriba o de tu descripción."
+        )
+        columna_horas, columna_disco = st.columns(2)
+        with columna_horas:
+            if st.checkbox("Indicar horas de uso diario", key="harddiag_opcion_horas"):
+                horas_uso = st.number_input(
+                    "Horas de uso por día", min_value=0, max_value=24, step=1, value=8
+                )
+        with columna_disco:
+            if st.checkbox("Indicar ocupación del disco", key="harddiag_opcion_disco"):
+                uso_disco = st.number_input(
+                    "Ocupación del disco (%)", min_value=0, max_value=100, step=1, value=80
+                )
+        temperatura_efectiva = (
+            temperatura if temperatura is not None
+            else lectura_desde_dcg(analisis, r"temp_cpu\((\d+)\)")
+        )
+        antiguedad_efectiva = (
+            antiguedad if antiguedad is not None
+            else lectura_desde_dcg(analisis, r"equipo\([^,]+,\s*(\d+)\)")
+        )
+        try:
+            preprocesador = obtener_preprocesador()
+            hechos_discretos = preprocesador.discretizar(
+                temperatura_cpu=temperatura_efectiva,
+                antiguedad=antiguedad_efectiva,
+                horas_uso=horas_uso,
+                uso_disco=uso_disco,
+            )
+        except ValueError as error:
+            st.error(str(error))
+            hechos_discretos = []
+        if hechos_discretos:
+            st.markdown(f"**Hechos discretos generados** · método: {preprocesador.metodo}")
+            for hecho in hechos_discretos:
+                variable = VARIABLES[hecho.variable]
+                st.write(
+                    f"- {variable[0]}: {hecho.valor:g} {variable[1]} → `{hecho.termino}`"
+                )
+        else:
+            st.caption("Sin lecturas numéricas todavía.")
+        discretos = [hecho.termino for hecho in hechos_discretos]
+
     enviar = st.button(
         "Analizar mi computador",
         type="primary",
@@ -1225,15 +1403,19 @@ def main() -> None:
                         )
                     )
                 ),
-                adicionales,
+                analisis,
                 temperatura,
                 patron,
                 tipo_equipo,
                 antiguedad,
                 pruebas_seleccionadas,
+                discretos,
             )
             respuesta = motor.analizar_caso(entrada)
+            respuesta.hechos_dcg = analisis.hechos
+            respuesta.no_reconocidas = analisis.no_reconocidas
             st.session_state["harddiag_ultima_respuesta"] = respuesta
+            st.session_state["harddiag_ultima_entrada"] = entrada
             st.session_state["harddiag_marca"] = marca
         except ValueError as error:
             st.error(str(error))

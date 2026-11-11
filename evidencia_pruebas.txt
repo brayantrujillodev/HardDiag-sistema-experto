@@ -153,6 +153,50 @@ Resultado: APROBADO
   Entrada válida sin diagnóstico: APROBADO
   Inventario completo de hechos y catálogos: APROBADO
   Reconocimiento de descripción natural ampliada: APROBADO
- INTEGRACIÓN: 7 de 7 casos aprobados
- RESUMEN: 18 de 18 casos aprobados
+  Oración natural completa -> DCG -> diagnóstico: APROBADO
+    clasificador (árbol de decisión (scikit-learn)): ['dato(temperatura_cpu, critica)', 'dato(uso_disco, critico)']
+  Pre-procesamiento numérico -> dato/2 -> R3b: APROBADO
+ INTEGRACIÓN: 9 de 9 casos aprobados
+========================================================================
+ DCG: oraciones en español analizadas por Prolog
+  «mi computador no enciende y huele a quemado»
+      hechos: ['no_enciende', 'olor_quemado']  no reconocidas: []  -> APROBADO
+  «La pantalla se pone azul, se reinicia sola y el disco hace clic»
+      hechos: ['pantalla_azul', 'reinicios_aleatorios', 'ruido_clic']  no reconocidas: []  -> APROBADO
+  «el pc va lento y la cpu está a 95 grados»
+      hechos: ['lentitud', 'temp_cpu(95)']  no reconocidas: []  -> APROBADO
+  «Al encender hace tres pitidos cortos y la pantalla queda en negro»
+      hechos: ['pitidos(tres_cortos)', 'pantalla_negra']  no reconocidas: []  -> APROBADO
+  «suena un pitido largo y dos cortos»
+      hechos: ['pitidos(un_largo_dos_cortos)']  no reconocidas: []  -> APROBADO
+  «mi portátil de 7 años pierde la fecha y hora»
+      hechos: ['hora_incorrecta', 'equipo(portatil,7)']  no reconocidas: []  -> APROBADO
+  «la pantalla no muestra imagen pero los ventiladores giran»
+      hechos: ['pantalla_negra', 'ventiladores_giran']  no reconocidas: []  -> APROBADO
+  «tarda mucho en iniciar y el disco duro hace ruido»
+      hechos: ['arranque_lento', 'ruido_clic']  no reconocidas: []  -> APROBADO
+  «aparecen rayas de colores en la pantalla y la imagen se ve distorsionada»
+      hechos: ['lineas_en_pantalla', 'artefactos_video']  no reconocidas: []  -> APROBADO
+  «el led está encendido, el ventilador no gira y se queda congelado»
+      hechos: ['led_encendido', 'ventilador_detenido', 'bloqueos']  no reconocidas: []  -> APROBADO
+ DCG: 10 de 10 oraciones analizadas correctamente
+========================================================================
+ PERSISTENCIA: regla aprendida en caliente y reinicios
+  Copia temporal de la base: C:\Users\sadti\AppData\Local\Temp\harddiag_prueba_fm8efqup\base_conocimiento.pl
+  [crear] Crear regla en caliente (assertz + escritura en el .pl): APROBADO
+      diagnósticos antes: []
+      diagnósticos después: ['fuente_sobrecargada']
+      reglas de la explicación: ['R26']
+  [verificar] Reinicio: la regla y el alias siguen en el .pl y diagnostican: APROBADO
+      reglas cargadas del .pl: ['fuente_sobrecargada']
+      con el alias aprendido: ['fuente_sobrecargada']
+      con la condición excluyente (no_enciende): ['fuente_poder_defectuosa']
+  [eliminar] Eliminar regla y alias (retract + bloque del .pl): APROBADO
+      reglas en memoria: []
+  [verificar_eliminada] Reinicio: la regla ya no existe: APROBADO
+      reglas cargadas del .pl: []
+      diagnósticos: []
+ PERSISTENCIA: 4 de 4 fases aprobadas
+========================================================================
+ RESUMEN: 34 de 34 casos aprobados
 ========================================================================

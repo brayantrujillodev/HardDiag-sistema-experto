@@ -13,6 +13,10 @@
 %%    PARTE C. LISTAS Y CONTROL DE FLUJO (3.2) listas, corte (!) y negación (\+)
 %%    PARTE D. RECOLECCIÓN Y SEVERIDAD   (3.3) findall/3, sort/2 y severidad
 %%    PARTE E. INTERFAZ PARA PYTHON      predicados que invoca el puente
+%%    PARTE F. EXPLICABILIDAD            trazas y datos faltantes
+%%    PARTE G. LENGUAJE NATURAL (DCG)    oraciones libres -> hechos simbólicos
+%%    PARTE H. MODO EXPERTO              reglas y alias aprendidos en caliente
+%%    CONOCIMIENTO APRENDIDO             bloque final que escribe el modo experto
 %%
 %%  PREVENCIÓN DE CICLOS
 %%    Las reglas están estratificadas: un predicado solo llama a predicados de
@@ -26,149 +30,26 @@
 %%  USO RÁPIDO (SWI-Prolog):
 %%    ?- consult('base_conocimiento.pl').
 %%    ?- consultar_texto('no_enciende, olor_quemado', Respuesta).
+%%    ?- consultar_texto('mi pc no prende y huele a quemado', Respuesta).
+%%    ?- parsear_oracion('la cpu esta a 97 grados y el ventilador suena fuerte',
+%%                       Hechos, NoReconocidas).
 %%
-%%  La base contiene exactamente 45 hechos: componentes, síntomas, catálogos
+%%  La base contiene exactamente 46 hechos: componentes, síntomas, catálogos
 %%  compactos, umbrales y ocho casos de ejemplo. Los predicados de acceso a
-%%  esos catálogos son reglas auxiliares; las reglas de inferencia son R1-R25.
+%%  esos catálogos son reglas auxiliares; las reglas de inferencia son R1-R26
+%%  (R26 evalúa las reglas que el experto aprende en caliente).
 %% =============================================================================
 
 % Los datos de un caso son dinámicos: la parte C los carga desde una lista
 % enviada por Python y los elimina al terminar (ver cargar_caso/2).
-:- dynamic equipo/3, observado/2, medicion/3, pitidos/2, prueba/3.
-:- dynamic alias_sintoma/2.
-:- discontiguous texto_a_lista/2.
+% discreto/3 guarda los niveles que calcula el preprocesamiento numérico de
+% Python (preprocesamiento.py) a partir de lecturas continuas.
+:- dynamic equipo/3, observado/2, medicion/3, pitidos/2, prueba/3, discreto/3.
 
-% Alias de entrada libre que el usuario experto puede aprender durante la
-% ejecución. Estos alias se usan para convertir frases normales del usuario en
-% síntomas del catálogo del sistema experto.
-alias_sintoma(no_enciende, 'no enciende').
-alias_sintoma(no_enciende, 'no prende').
-alias_sintoma(no_enciende, 'no arranca').
-alias_sintoma(no_enciende, 'no hay energia').
-alias_sintoma(no_enciende, 'no tiene corriente').
-alias_sintoma(no_enciende, 'no da señales de vida').
-alias_sintoma(no_enciende, 'no arranca el computador').
-alias_sintoma(olor_quemado, 'olor a quemado').
-alias_sintoma(olor_quemado, 'olor quemado').
-alias_sintoma(olor_quemado, 'huele a quemado').
-alias_sintoma(olor_quemado, 'sale humo').
-alias_sintoma(pantalla_negra, 'pantalla negra').
-alias_sintoma(pantalla_negra, 'pantalla en negro').
-alias_sintoma(pantalla_negra, 'monitor negro').
-alias_sintoma(pantalla_negra, 'no muestra imagen').
-alias_sintoma(pantalla_negra, 'pantalla no se ve').
-alias_sintoma(pantalla_negra, 'sin imagen').
-alias_sintoma(pantalla_negra, 'no da video').
-alias_sintoma(pantalla_negra, 'monitor sin señal').
-alias_sintoma(pantalla_azul, 'pantalla azul').
-alias_sintoma(pantalla_azul, 'pantalla en azul').
-alias_sintoma(pantalla_azul, 'pantallazo azul').
-alias_sintoma(reinicios_aleatorios, 'se reinicia solo').
-alias_sintoma(reinicios_aleatorios, 'se reinicia de repente').
-alias_sintoma(reinicios_aleatorios, 'reinicia constantemente').
-alias_sintoma(apagados_repentinos, 'se apaga inesperadamente').
-alias_sintoma(apagados_repentinos, 'se apaga despues de un rato').
-alias_sintoma(apagados_repentinos, 'se apaga jugando').
-alias_sintoma(apagados_repentinos, 'se apaga al jugar').
-alias_sintoma(apagados_repentinos, 'se apaga cuando juego').
-alias_sintoma(ventilador_ruidoso, 'ventilador ruidoso').
-alias_sintoma(ventilador_ruidoso, 'ventilador suena duro').
-alias_sintoma(ventilador_ruidoso, 'ruido del ventilador').
-alias_sintoma(ventilador_ruidoso, 'se calienta').
-alias_sintoma(ventilador_ruidoso, 'se sobrecalienta').
-alias_sintoma(ventilador_ruidoso, 'temperatura muy alta').
-alias_sintoma(ventilador_ruidoso, 'equipo muy caliente').
-alias_sintoma(ventilador_detenido, 'ventilador no gira').
-alias_sintoma(ventilador_detenido, 'ventilador detenido').
-alias_sintoma(ventiladores_giran, 'ventiladores giran').
-alias_sintoma(lentitud, 'va lento').
-alias_sintoma(lentitud, 'computador lento').
-alias_sintoma(lentitud, 'computadora lenta').
-alias_sintoma(lentitud, 'se demora mucho').
-alias_sintoma(arranque_lento, 'arranque lento').
-alias_sintoma(arranque_lento, 'tarda en iniciar').
-alias_sintoma(arranque_lento, 'demora al arrancar').
-alias_sintoma(ruido_clic, 'disco hace clic').
-alias_sintoma(ruido_clic, 'disco hace ruido').
-alias_sintoma(ruido_clic, 'ruido en el disco duro').
-alias_sintoma(disco_no_encontrado, 'disco no encontrado').
-alias_sintoma(disco_no_encontrado, 'no detecta el disco').
-alias_sintoma(disco_no_encontrado, 'no reconoce el disco duro').
-alias_sintoma(disco_no_encontrado, 'disco duro no funciona').
-alias_sintoma(lineas_en_pantalla, 'líneas en la pantalla').
-alias_sintoma(lineas_en_pantalla, 'rayas en la pantalla').
-alias_sintoma(lineas_en_pantalla, 'pantalla con rayas').
-alias_sintoma(lineas_en_pantalla, 'pantalla parpadea').
-alias_sintoma(artefactos_video, 'artefactos en la pantalla').
-alias_sintoma(artefactos_video, 'imagen distorsionada').
-alias_sintoma(artefactos_video, 'pixeles de colores').
-alias_sintoma(bloqueos, 'se congela').
-alias_sintoma(bloqueos, 'se queda congelado').
-alias_sintoma(bloqueos, 'se queda pegado').
-alias_sintoma(bloqueos, 'no responde').
-alias_sintoma(bloqueos, 'deja de responder').
-
-listar_aliases(Lista) :-
-    findall([Sintoma, Frase], alias_sintoma(Sintoma, Frase), Lista).
-
-agregar_alias(Frase, Sintoma) :-
-    atom(Frase),
-    atom(Sintoma),
-    sintoma_catalogo(Sintoma, _),
-    \+ alias_sintoma(Sintoma, Frase),
-    assertz(alias_sintoma(Sintoma, Frase)).
-
-resolver_alias(Frase, Sintoma) :-
-    downcase_atom(Frase, FraseNormal),
-    downcase_atom(Sintoma, SintomaNormal),
-    alias_sintoma(SintomaNormal, FraseNormal).
-
-% DCG mínimo para convertir texto libre en síntomas del dominio. Sirve para
-% cumplir la entrega 3 (procesamiento de lenguaje natural) sin perder la
-% validación del catálogo existente.
-texto_a_lista(Texto, Lista) :-
-    atom(Texto),
-    downcase_atom(Texto, Normalizado),
-    atom_codes(Normalizado, Codes),
-    phrase(sintomas(Lista), Codes), !.
-texto_a_lista(Texto, Lista) :-
-    atomic_list_concat(['[', Texto, ']'], Atomo),
-    catch(term_to_atom(Lista, Atomo), _, fail),
-    is_list(Lista).
-
-sintomas([S|R]) --> sintoma(S), separador, sintomas(R).
-sintomas([S]) --> sintoma(S).
-sintomas([]) --> [].
-
-separador --> [','], espacios.
-separador --> [y], espacios.
-separador --> espacios.
-
-espacios --> [X], { code_type(X, space) }, espacios.
-espacios --> [].
-
-sintoma(no_enciende) --> [no], espacios, [enciende].
-sintoma(no_enciende) --> [no], espacios, [prende].
-sintoma(no_enciende) --> [no], espacios, [arranca].
-sintoma(olor_quemado) --> [olor], espacios, [a], espacios, [quemado].
-sintoma(olor_quemado) --> [olor], espacios, [quemado].
-sintoma(pantalla_negra) --> [pantalla], espacios, [negra].
-sintoma(pantalla_negra) --> [pantalla], espacios, [en], espacios, [negro].
-sintoma(pantalla_negra) --> [monitor], espacios, [negro].
-sintoma(pantalla_azul) --> [pantalla], espacios, [azul].
-sintoma(pantalla_azul) --> [pantalla], espacios, [en], espacios, [azul].
-sintoma(reinicios_aleatorios) --> [se], espacios, [reinicia], espacios, [solo].
-sintoma(ventilador_ruidoso) --> [ventilador], espacios, [ruidoso].
-sintoma(ventilador_ruidoso) --> [se], espacios, [calienta].
-sintoma(ventilador_detenido) --> [ventilador], espacios, [no], espacios, [gira].
-sintoma(ventiladores_giran) --> [ventiladores], espacios, [giran].
-sintoma(lentitud) --> [va], espacios, [lento].
-sintoma(arranque_lento) --> [arranque], espacios, [lento].
-sintoma(ruido_clic) --> [disco], espacios, [hace], espacios, [clic].
-sintoma(disco_no_encontrado) --> [disco], espacios, [no], espacios, [encontrado].
-sintoma(lineas_en_pantalla) --> [lineas], espacios, [en], espacios, [la], espacios, [pantalla].
-sintoma(artefactos_video) --> [artefactos], espacios, [en], espacios, [la], espacios, [pantalla].
-sintoma(bloqueos) --> [se], espacios, [congela].
+% Conocimiento adquirido en caliente desde el modo experto (parte H). Sus
+% hechos se escriben al final de este archivo, dentro del bloque de
+% conocimiento aprendido, para que sobrevivan a un reinicio del programa.
+:- dynamic regla_aprendida/8, alias_aprendido/2.
 
 
 %% =============================================================================
@@ -281,7 +162,8 @@ catalogo_resultados([
 %% -----------------------------------------------------------------------------
 catalogo_tipos_equipo([
     escritorio-'Computador de escritorio',
-    portatil-'Computador portátil'
+    portatil-'Computador portátil',
+    desconocido-'Tipo de equipo no indicado'
 ]).
 
 %% -----------------------------------------------------------------------------
@@ -374,6 +256,18 @@ caso_ejemplo(disco, [arranque_lento, ruido_clic,
 caso_ejemplo(bateria_cmos, [hora_incorrecta, equipo(escritorio, 7)]).
 
 %% -----------------------------------------------------------------------------
+%%  A.15 Niveles discretos que produce el preprocesamiento numérico de Python
+%%       (preprocesamiento.py) a partir de lecturas continuas. Llegan en la
+%%       lista de entrada como dato(Variable, Nivel).
+%% -----------------------------------------------------------------------------
+catalogo_variables_discretas([
+    temperatura_cpu-[normal, elevada, alta, critica],
+    antiguedad-[nuevo, medio, antiguo],
+    horas_uso-[bajo, moderado, intensivo],
+    uso_disco-[normal, alto, critico]
+]).
+
+%% -----------------------------------------------------------------------------
 %%  A.14 Reglas auxiliares para consultar los catálogos compactos.
 %%       Estos accesores mantienen la interfaz usada por las reglas de R1-R25.
 %% -----------------------------------------------------------------------------
@@ -400,6 +294,8 @@ tipo_equipo(Tipo, Descripcion) :-
 gravedad(Diagnostico, Nivel) :-
     catalogo_gravedades(Gravedades),
     member(Diagnostico-Nivel, Gravedades).
+gravedad(Diagnostico, Nivel) :-
+    regla_aprendida(Diagnostico, _, _, _, _, _, Nivel, _).
 
 nivel_danio(Diagnostico, leve) :-
     gravedad(Diagnostico, baja).
@@ -415,10 +311,19 @@ peso_gravedad(Nivel, Peso) :-
 accion(Diagnostico, Accion) :-
     catalogo_acciones(Acciones),
     member(Diagnostico-Accion, Acciones).
+accion(Diagnostico, Accion) :-
+    regla_aprendida(Diagnostico, _, _, _, _, _, _, Accion).
 
 evidencia_tipica(Diagnostico, Evidencia) :-
     catalogo_evidencia(Evidencias),
     member(Diagnostico-Evidencia, Evidencias).
+evidencia_tipica(Diagnostico, Evidencia) :-
+    regla_aprendida(Diagnostico, _, _, Evidencia, _, _, _, _).
+
+nivel_discreto(Variable, Nivel) :-
+    catalogo_variables_discretas(Variables),
+    member(Variable-Niveles, Variables),
+    member(Nivel, Niveles).
 
 
 %% =============================================================================
@@ -448,6 +353,11 @@ sobrecalentamiento(E) :-
     medicion(E, temp_cpu, T),
     umbral(temp_cpu_max_celsius, Max),
     T > Max.
+% R3b. El clasificador numérico de Python ya discretizó la temperatura como
+%      alta o crítica (mismos umbrales que A.8).
+sobrecalentamiento(E) :-
+    discreto(E, temperatura_cpu, Nivel),
+    memberchk(Nivel, [alta, critica]).
 
 % R4. Los pitidos de la BIOS apuntan a un componente determinado.
 pitidos_error(E, Componente) :-
@@ -467,11 +377,24 @@ sintoma_de(E, Componente) :-
     observado(E, Sintoma),
     sintoma_componente(Sintoma, Componente).
 
+% R6b. Una lectura numérica discretizada también es un indicio sobre un
+%      componente (no basta por sí sola para un diagnóstico).
+indicio_discreto(E, procesador) :-
+    discreto(E, temperatura_cpu, Nivel),
+    memberchk(Nivel, [alta, critica]).
+indicio_discreto(E, procesador) :-
+    discreto(E, horas_uso, intensivo).
+indicio_discreto(E, almacenamiento) :-
+    discreto(E, uso_disco, critico).
+
 % R7. El equipo supera la antigüedad crítica.
 equipo_antiguo(E) :-
     equipo(E, _Tipo, Anios),
     umbral(antiguedad_critica_anios, Limite),
     Anios >= Limite.
+% R7b. El clasificador numérico ya clasificó la antigüedad como 'antiguo'.
+equipo_antiguo(E) :-
+    discreto(E, antiguedad, antiguo).
 
 % R8. Factor de riesgo inmediato: olor a quemado o temperatura crítica.
 factor_riesgo(E) :-
@@ -480,6 +403,9 @@ factor_riesgo(E) :-
     medicion(E, temp_cpu, T),
     umbral(temp_cpu_critica_celsius, Critica),
     T >= Critica.
+% R8b. Temperatura crítica según el clasificador numérico.
+factor_riesgo(E) :-
+    discreto(E, temperatura_cpu, critica).
 
 %% -----------------------------------------------------------------------------
 %%  NIVEL 2 – INFERENCIA INTERMEDIA
@@ -610,6 +536,15 @@ diagnostico(E, disco_fallando, alta) :-
 diagnostico(E, bateria_cmos_agotada, alta) :-
     bateria_cmos_agotada(E),
     \+ descartado(E, bateria_cmos_agotada).
+% R26. Diagnósticos aprendidos en caliente desde el modo experto (parte H).
+%      Cada regla_aprendida/8 lista las condiciones que deben cumplirse y las
+%      que la excluyen. \+ se evalúa con E y las exclusiones ya instanciadas.
+diagnostico(E, Diagnostico, Certeza) :-
+    regla_aprendida(Diagnostico, _Nombre, _Componente, Requeridas, Excluyentes,
+                    Certeza, _Gravedad, _Accion),
+    cumple_condiciones(E, Requeridas),
+    \+ ( member(Condicion, Excluyentes), condicion_caso(E, Condicion) ),
+    \+ descartado(E, Diagnostico).
 
 % R22. Recomendación: la acción asociada a cada diagnóstico del equipo.
 recomendacion(E, Accion) :-
@@ -635,6 +570,21 @@ sin_diagnostico(E) :-
     equipo(E, _Tipo, _Anios),
     \+ diagnostico(E, _Diagnostico, _Certeza).
 
+% Auxiliares de R26: una condición de regla aprendida se comprueba contra el
+% caso cargado. Las condiciones especiales reutilizan reglas de nivel 1.
+% condicion_caso(+E, +Condicion)  (cláusulas excluyentes con corte)
+condicion_caso(E, temp_cpu_alta)  :- !, once(sobrecalentamiento(E)).
+condicion_caso(E, equipo_antiguo) :- !, once(equipo_antiguo(E)).
+condicion_caso(E, pitidos(P))     :- !, pitidos(E, P).
+condicion_caso(E, prueba(N, R))   :- !, prueba(E, N, R).
+condicion_caso(E, Sintoma)        :- observado(E, Sintoma).
+
+% cumple_condiciones(+E, +Condiciones): recursión por la cola de la lista.
+cumple_condiciones(_, []).
+cumple_condiciones(E, [Condicion|Resto]) :-
+    condicion_caso(E, Condicion),
+    cumple_condiciones(E, Resto).
+
 
 %% =============================================================================
 %%  PARTE C. PROCESAMIENTO DE LISTAS Y CONTROL DE FLUJO (3.2)
@@ -645,6 +595,7 @@ sin_diagnostico(E) :-
 %%      pitidos(Patron)             patrón de pitidos de la BIOS
 %%      prueba(Nombre, Resultado)   prueba simple realizada
 %%      equipo(Tipo, Anios)         tipo y antigüedad del equipo
+%%      dato(Variable, Nivel)       lectura discretizada por preprocesamiento.py
 %% =============================================================================
 
 %% -----------------------------------------------------------------------------
@@ -667,6 +618,8 @@ clasificar_item(prueba(N, R), prueba) :-
 clasificar_item(equipo(T, A), equipo) :-
     tipo_equipo(T, _),
     integer(A), A >= 0, !.
+clasificar_item(dato(V, N), discreto) :-
+    nivel_discreto(V, N), !.
 clasificar_item(S, sintoma) :-
     atom(S),
     sintoma_catalogo(S, _), !.
@@ -692,14 +645,19 @@ validar_entrada([Item|Resto], Validos, [Item|Descartados]) :-
 % aparecer literalmente en la lista. Los cortes hacen excluyentes las cláusulas.
 evidencia_presente(temp_cpu_alta, Lista) :-
     !,
-    member(temp_cpu(V), Lista),
-    umbral(temp_cpu_max_celsius, Max),
-    V > Max, !.
+    (   member(temp_cpu(V), Lista),
+        umbral(temp_cpu_max_celsius, Max),
+        V > Max
+    ;   member(dato(temperatura_cpu, Nivel), Lista),
+        memberchk(Nivel, [alta, critica])
+    ), !.
 evidencia_presente(equipo_antiguo, Lista) :-
     !,
-    member(equipo(_, A), Lista),
-    umbral(antiguedad_critica_anios, Limite),
-    A >= Limite, !.
+    (   member(equipo(_, A), Lista),
+        umbral(antiguedad_critica_anios, Limite),
+        A >= Limite
+    ;   memberchk(dato(antiguedad, antiguo), Lista)
+    ), !.
 evidencia_presente(Condicion, Lista) :-
     memberchk(Condicion, Lista).
 
@@ -761,6 +719,7 @@ cargar_item(Id, temp_cpu(V))    :- !, assertz(medicion(Id, temp_cpu, V)).
 cargar_item(Id, pitidos(P))     :- !, assertz(pitidos(Id, P)).
 cargar_item(Id, prueba(N, R))   :- !, assertz(prueba(Id, N, R)).
 cargar_item(Id, equipo(T, A))   :- !, assertz(equipo(Id, T, A)).
+cargar_item(Id, dato(V, N))     :- !, assertz(discreto(Id, V, N)).
 cargar_item(Id, Sintoma)        :- assertz(observado(Id, Sintoma)).
 
 % Si la lista no trae el equipo, se registra con tipo desconocido y 0 años.
@@ -776,7 +735,8 @@ limpiar_caso(Id) :-
     retractall(observado(Id, _)),
     retractall(medicion(Id, _, _)),
     retractall(pitidos(Id, _)),
-    retractall(prueba(Id, _, _)).
+    retractall(prueba(Id, _, _)),
+    retractall(discreto(Id, _, _)).
 
 
 %% =============================================================================
@@ -870,7 +830,9 @@ componentes_sospechosos(Entrada, Sospechosos) :-
         limpiar_caso(caso_tmp)).
 
 recolectar_sospechas(Id, Sospechosos) :-
-    findall(C, ( sintoma_de(Id, C) ; pitidos_error(Id, C) ), Todos),
+    findall(C, ( sintoma_de(Id, C)
+               ; pitidos_error(Id, C)
+               ; indicio_discreto(Id, C) ), Todos),
     sort(Todos, Unicos),
     findall(N-C, ( member(C, Unicos), contar_ocurrencias(C, Todos, N) ), Pares),
     sort(0, @>=, Pares, Descendente),
@@ -899,14 +861,19 @@ descartados_como_texto(Entrada, Textos) :-
             Textos).
 
 % consultar_texto(+Texto, -Respuesta)
-% Igual que consultar_caso/2, pero recibe texto separado por comas, por
-% ejemplo 'no_enciende, olor_quemado, temp_cpu(90)'.
+% Igual que consultar_caso/2. Acepta la sintaxis formal separada por comas
+% ('no_enciende, olor_quemado, temp_cpu(90)') o una oración en español, que
+% se analiza con la DCG de la parte G ('mi pc no prende y huele a quemado').
 consultar_texto(Texto, Respuesta) :-
     texto_a_lista(Texto, Lista), !,
     consultar_caso(Lista, Respuesta).
-consultar_texto(_, [entrada_invalida, [], [], []]).   % fallback: sintaxis inválida
+consultar_texto(Texto, Respuesta) :-
+    parsear_oracion(Texto, Hechos, _NoReconocidas),
+    Hechos \== [], !,
+    consultar_caso(Hechos, Respuesta).
+consultar_texto(_, [entrada_invalida, [], [], []]).   % fallback: sin datos válidos
 
-% texto_a_lista(+Texto, -Lista)
+% texto_a_lista(+Texto, -Lista): lee la sintaxis formal como lista Prolog.
 texto_a_lista(Texto, Lista) :-
     atomic_list_concat(['[', Texto, ']'], Atomo),
     catch(term_to_atom(Lista, Atomo), _, fail),
@@ -989,10 +956,11 @@ traza_diagnostico(Id, placa_base_defectuosa,
                   ['R1', 'R4', 'R19', 'R20', 'R21']) :-
     placa_base_defectuosa(Id).
 traza_diagnostico(Id, refrigeracion_deficiente, Reglas) :-
-    falla_refrigeracion(Id),
+    once(falla_refrigeracion(Id)),
+    regla_temperatura(Id, ReglaTemperatura),
     ( factor_riesgo(Id)
-    -> Reglas = ['R3', 'R8', 'R12', 'R21']
-    ; Reglas = ['R3', 'R12', 'R21']
+    -> Reglas = [ReglaTemperatura, 'R8', 'R12', 'R21']
+    ; Reglas = [ReglaTemperatura, 'R12', 'R21']
     ).
 traza_diagnostico(Id, ram_mal_asentada, Reglas) :-
     memoria_mal_asentada(Id),
@@ -1002,8 +970,26 @@ traza_diagnostico(Id, ram_defectuosa, Reglas) :-
     traza_memoria(Id, Reglas, ['R15', 'R21']).
 traza_diagnostico(Id, disco_fallando, ['R6', 'R16', 'R21']) :-
     almacenamiento_degradado(Id).
-traza_diagnostico(Id, bateria_cmos_agotada, ['R7', 'R17', 'R21']) :-
-    bateria_cmos_agotada(Id).
+traza_diagnostico(Id, bateria_cmos_agotada, [ReglaAntiguedad, 'R17', 'R21']) :-
+    once(bateria_cmos_agotada(Id)),
+    regla_antiguedad(Id, ReglaAntiguedad).
+traza_diagnostico(Id, Diagnostico, ['R26']) :-
+    regla_aprendida(Diagnostico, _, _, Requeridas, _, _, _, _),
+    cumple_condiciones(Id, Requeridas).
+
+% La medición directa (R3, R7) tiene prioridad sobre el dato discretizado
+% por el clasificador numérico (R3b, R7b).
+regla_temperatura(Id, 'R3') :-
+    medicion(Id, temp_cpu, T),
+    umbral(temp_cpu_max_celsius, Max),
+    T > Max, !.
+regla_temperatura(_, 'R3b').
+
+regla_antiguedad(Id, 'R7') :-
+    equipo(Id, _, Anios),
+    umbral(antiguedad_critica_anios, Limite),
+    Anios >= Limite, !.
+regla_antiguedad(_, 'R7b').
 
 traza_memoria(Id, Reglas, ReglasFinales) :-
     ( pitidos_error(Id, memoria_ram)
@@ -1020,6 +1006,7 @@ hechos_comprobados(Id, Reglas, Hechos) :-
     findall(Texto, hecho_pitido(Id, Texto), Pitidos),
     findall(Texto, hecho_prueba(Id, Texto), Pruebas),
     findall(Texto, hecho_equipo(Id, Texto), Equipos),
+    findall(Texto, hecho_discreto(Id, Texto), Discretos),
     findall(Texto,
             ( member(Regla, ['R6', 'R11', 'R13', 'R16']),
               memberchk(Regla, Reglas),
@@ -1030,7 +1017,7 @@ hechos_comprobados(Id, Reglas, Hechos) :-
             ( memberchk('R4', Reglas), hecho_asociacion_pitido(Id, Texto) ),
             Codigos),
     findall(Texto, umbral_traza(Reglas, Id, Texto), Umbrales),
-    append([Observados, Mediciones, Pitidos, Pruebas, Equipos,
+    append([Observados, Mediciones, Pitidos, Pruebas, Equipos, Discretos,
             Asociaciones, Codigos, Umbrales], Hechos).
 
 hecho_observado(Id, Texto) :-
@@ -1047,8 +1034,11 @@ hecho_prueba(Id, Texto) :-
     format(atom(Texto), 'prueba(~w, ~w)', [Nombre, Resultado]).
 hecho_equipo(Id, Texto) :-
     equipo(Id, Tipo, Anios),
-    Tipo \== desconocido,
+    ( Tipo \== desconocido ; Anios > 0 ),
     format(atom(Texto), 'equipo(~w, ~w años)', [Tipo, Anios]).
+hecho_discreto(Id, Texto) :-
+    discreto(Id, Variable, Nivel),
+    format(atom(Texto), 'dato(~w, ~w)', [Variable, Nivel]).
 hecho_asociacion_sintoma(Id, Texto) :-
     observado(Id, Sintoma),
     sintoma_componente(Sintoma, Componente),
@@ -1102,6 +1092,20 @@ negacion_traza(Id, ram_mal_asentada, Reglas, Texto) :-
     format(atom(Texto),
            'R13: \\+ pitidos_error(memoria_ram) tuvo éxito; la sospecha provino de inestabilidad y síntomas de RAM.',
            []).
+negacion_traza(Id, Diagnostico, Reglas, Texto) :-
+    memberchk('R26', Reglas),
+    \+ descartado(Id, Diagnostico),
+    format(atom(Texto),
+           'R26: \\+ descartado(~w) tuvo éxito; no se encontró una prueba contradictoria.',
+           [Diagnostico]).
+negacion_traza(Id, Diagnostico, Reglas, Texto) :-
+    memberchk('R26', Reglas),
+    regla_aprendida(Diagnostico, _, _, _, Excluyentes, _, _, _),
+    member(Condicion, Excluyentes),
+    \+ condicion_caso(Id, Condicion),
+    format(atom(Texto),
+           'R26: \\+ ~w tuvo éxito; no está presente la condición que excluye la regla.',
+           [Condicion]).
 
 alternativas_descartadas(Id, Alternativas) :-
     findall(Texto,
@@ -1173,6 +1177,8 @@ componente_diagnostico(ram_mal_asentada, memoria_ram).
 componente_diagnostico(ram_defectuosa, memoria_ram).
 componente_diagnostico(disco_fallando, almacenamiento).
 componente_diagnostico(bateria_cmos_agotada, placa_base).
+componente_diagnostico(Diagnostico, Componente) :-
+    regla_aprendida(Diagnostico, _, Componente, _, _, _, _, _).
 
 construir_sugerencias([], _, []).
 construir_sugerencias(Candidatos, Validos, Sugerencias) :-
@@ -1183,8 +1189,8 @@ construir_sugerencias(Candidatos, Validos, Sugerencias) :-
             ( member(Clave, Claves),
               findall(D, (member(D, Candidatos),
                           dato_recomendado(D, Clave, _, _, _)), Hipotesis),
-              once(dato_recomendado(Dato, Clave, Descripcion, Razon, Base)),
-              memberchk(Dato, Hipotesis),
+              once(( member(Dato, Hipotesis),
+                     dato_recomendado(Dato, Clave, Descripcion, Razon, Base) )),
               length(Hipotesis, Cantidad),
               Prioridad is Base + Cantidad * 10
             ),
@@ -1215,10 +1221,17 @@ dato_ya_informado(cambio_bateria, Validos) :-
     member(prueba(cambio_bateria, _), Validos).
 dato_ya_informado(temperatura, Validos) :-
     member(temp_cpu(_), Validos).
+dato_ya_informado(temperatura, Validos) :-
+    member(dato(temperatura_cpu, _), Validos).
 dato_ya_informado(patron_pitidos, Validos) :-
     member(pitidos(_), Validos).
 dato_ya_informado(antiguedad, Validos) :-
     member(equipo(_, _), Validos).
+dato_ya_informado(antiguedad, Validos) :-
+    member(dato(antiguedad, _), Validos).
+dato_ya_informado(Sintoma, Validos) :-
+    sintoma_catalogo(Sintoma, _),
+    memberchk(Sintoma, Validos).
 
 dato_recomendado(cable_o_monitor_defectuoso, cambio_cable,
     'Prueba: cambia el cable de video y registra si resuelve el problema.',
@@ -1268,6 +1281,28 @@ dato_recomendado(bateria_cmos_agotada, antiguedad,
     'Dato: indica el tipo y la antigüedad aproximada del equipo.',
     'R7 y R17 necesitan comprobar que el equipo alcanzó el umbral de antigüedad.',
     75).
+% Reglas aprendidas: cada condición requerida es un dato que conviene pedir.
+dato_recomendado(Diagnostico, Clave, Descripcion, Razon, 70) :-
+    regla_aprendida(Diagnostico, Nombre, _, Requeridas, _, _, _, _),
+    member(Condicion, Requeridas),
+    clave_condicion(Condicion, Clave, Descripcion),
+    format(atom(Razon),
+           'R26: la regla aprendida «~w» necesita comprobar esta condición.',
+           [Nombre]).
+
+% clave_condicion(+Condicion, -Clave, -Descripcion)  (excluyentes con corte)
+clave_condicion(temp_cpu_alta, temperatura,
+    'Dato: proporciona la temperatura del procesador en °C, si puedes consultarla.') :- !.
+clave_condicion(equipo_antiguo, antiguedad,
+    'Dato: indica el tipo y la antigüedad aproximada del equipo.') :- !.
+clave_condicion(pitidos(_), patron_pitidos,
+    'Dato: indica el patrón de pitidos al encender, si lo escuchas.') :- !.
+clave_condicion(prueba(Nombre, _), Nombre, Descripcion) :- !,
+    prueba_catalogo(Nombre, Texto),
+    format(atom(Descripcion), 'Prueba: «~w»; registra el resultado.', [Texto]).
+clave_condicion(Sintoma, Sintoma, Descripcion) :-
+    sintoma_catalogo(Sintoma, Texto),
+    format(atom(Descripcion), 'Síntoma: confirma si ocurre esto: «~w».', [Texto]).
 
 sugerencias_generales(Validos, [[Descripcion, Razon, []]]) :-
     memberchk(led_encendido, Validos), !,
@@ -1280,3 +1315,704 @@ sugerencias_generales(_, [[Descripcion, Razon, []]]) :-
 sugerencia_entrada_vacia([[Descripcion, Razon, []]]) :-
     Descripcion = 'Selecciona al menos un síntoma observable para iniciar el diagnóstico.',
     Razon = 'Sin condiciones de entrada, Prolog no puede comprobar ninguna regla de diagnóstico.'.
+
+
+%% =============================================================================
+%%  PARTE G. LENGUAJE NATURAL: GRAMÁTICA DE CLÁUSULAS DEFINIDAS (DCG)
+%%
+%%  Python envía la oración tal como la escribió el usuario. Prolog:
+%%    1. la normaliza (minúsculas, sin tildes ni signos) y la divide en
+%%       palabras con tokenizar/2;
+%%    2. la analiza con la DCG oracion//1: una oración es una secuencia de
+%%       sintagmas (síntomas, mediciones, pitidos y datos del equipo) unidos
+%%       por conectores y acompañados de palabras de relleno;
+%%    3. devuelve los hechos simbólicos y las palabras que no reconoció.
+%%
+%%  Ejemplo:
+%%    ?- parsear_oracion('Mi PC no prende y huele a quemado', Hechos, NoRec).
+%%    Hechos = [no_enciende, olor_quemado], NoRec = [].
+%% =============================================================================
+
+%% -----------------------------------------------------------------------------
+%%  G.1 Normalización y tokenización
+%% -----------------------------------------------------------------------------
+
+% tokenizar(+Texto, -Palabras)
+% Las comas, puntos y puntos y coma se conservan como el token ',' porque
+% separan sintagmas; el resto de signos se convierte en espacios.
+tokenizar(Texto, Palabras) :-
+    text_to_string(Texto, Cadena),
+    string_lower(Cadena, Minusculas),
+    string_codes(Minusculas, Codigos),
+    maplist(codigo_normalizado, Codigos, Partes),
+    append(Partes, Normalizados),
+    string_codes(Limpia, Normalizados),
+    split_string(Limpia, " ", " ", Trozos),
+    exclude(==(""), Trozos, Validos),
+    maplist(atom_string, Palabras, Validos).
+
+% codigo_normalizado(+Codigo, -Codigos)  (cláusulas excluyentes con corte)
+codigo_normalizado(C, [C]) :- between(0'a, 0'z, C), !.
+codigo_normalizado(C, [C]) :- between(0'0, 0'9, C), !.
+codigo_normalizado(C, [B]) :- letra_con_tilde(C, B), !.
+codigo_normalizado(C, Codigos) :-
+    memberchk(C, [0'°, 0'º]), !,
+    string_codes(" grados ", Codigos).
+codigo_normalizado(C, Codigos) :-
+    string_codes(",;.:", Separadores),
+    memberchk(C, Separadores), !,
+    string_codes(" , ", Codigos).
+codigo_normalizado(_, [0'\s]).                 % cualquier otro signo: espacio
+
+letra_con_tilde(C, B) :-
+    member(Base-Variantes, [0'a-"áàäâ", 0'e-"éèëê", 0'i-"íìïî",
+                            0'o-"óòöô", 0'u-"úùüû", 0'n-"ñ", 0'c-"ç"]),
+    string_codes(Variantes, Codigos),
+    memberchk(C, Codigos), !,
+    B = Base.
+
+%% -----------------------------------------------------------------------------
+%%  G.2 Léxico
+%%      vocabulario(Categoria, Palabras)   (palabras ya normalizadas)
+%% -----------------------------------------------------------------------------
+vocabulario(determinante,  [el, la, los, las, un, una, unos, unas, mi, mis,
+                            su, sus, tu, tus, este, estos, estas, ese, esa,
+                            esos, esas]).
+vocabulario(preposicion,   [a, al, de, del, en, con, por, para, desde, hasta,
+                            sobre, entre]).
+vocabulario(conector,      [y, e, ni, o, u, pero, ademas, tambien, luego,
+                            entonces, mientras, aparte, ',']).
+vocabulario(negacion,      [no, ni, nunca]).
+vocabulario(intensificador, [muy, mucho, muchisimo, demasiado, bastante, super,
+                            re, tan, algo]).
+vocabulario(verbo_estado,  [esta, estan, queda, quedan, quedo, pone, ponen,
+                            puso, vuelve, vuelven, volvio, sale, salen, aparece,
+                            aparecen, muestra, muestran, es, son, va, van, anda,
+                            andan, funciona, funcionan, ve, ven, se_ve, corre]).
+vocabulario(sustantivo_equipo, [computador, computadora, computadores, pc,
+                            ordenador, equipo, maquina, servidor, sistema,
+                            aparato, compu]).
+vocabulario(relleno,       [se, me, le, lo, les, nos, que, cuando, presenta,
+                            presento, tiene, tienen, hay, hace, hacen, solo,
+                            sola, solos, repente, veces, vez, siempre,
+                            constantemente, frecuentemente, seguido,
+                            ultimamente, aleatoriamente, inesperadamente,
+                            repentinamente, rato, despues, antes, hoy, ayer,
+                            dia, dias, semana, semanas, minutos, horas,
+                            jugando, juego, juegos, usar, uso, usando,
+                            trabajando, ya, aun, todavia, creo, parece, noto,
+                            veo, note, pasa, sucede, ocurre, problema,
+                            problemas, falla, fallas, encender, prender,
+                            arrancar, iniciar, enciendo, prendo, cada, nada,
+                            todo, toda, todos, otro, otra, momento, momentos,
+                            antiguedad, mas, menos, como, porque, pues, raro,
+                            rara, poco, bien, mal, tengo, tenemos, aproximadamente,
+                            casi, c, suena, hola, buenas, ayuda, favor]).
+
+% Vocabulario específico del dominio.
+vocabulario(encender,      [enciende, encienden, prende, prenden, arranca,
+                            arrancan, inicia, inician, bootea, energiza]).
+vocabulario(energia,       [energia, corriente, electricidad, poder]).
+vocabulario(luz,           [led, leds, luz, luces, bombillo, bombillos,
+                            indicador, indicadores, piloto]).
+vocabulario(encendido,     [encendido, encendida, encendidos, encendidas,
+                            prendido, prendida, prendidos, prendidas, enciende,
+                            encienden, prende, prenden]).
+vocabulario(apagar,        [apaga, apagan, apago, apagando, apagarse]).
+vocabulario(apagon,        [apagados, apagones, apagon]).
+vocabulario(repentino,     [repentino, repentinos, aleatorios, inesperados]).
+vocabulario(oler,          [huele, huelen, olor, olores]).
+vocabulario(quemado,       [quemado, quemada, quemados, humo]).
+vocabulario(pitido,        [pitido, pitidos, pita, pitea, bip, bips, beep,
+                            beeps, pitazo, pitazos, pitar]).
+vocabulario(largo,         [largo, larga, largos]).
+vocabulario(corto,         [corto, cortos, corta, cortas]).
+vocabulario(repetido,      [repetidos, repetido, seguidos, continuos,
+                            constantes]).
+vocabulario(hora,          [hora, fecha, reloj, horario]).
+vocabulario(verbo_hora,    [pierde, pierden, perdio, desconfigura,
+                            desconfiguran, borra, borran, atrasa, atrasan,
+                            resetea, resetean, reinicia, reinician, cambia,
+                            cambian]).
+vocabulario(hora_mal,      [incorrecta, incorrecto, incorrectas, mal,
+                            equivocada, desconfigurada, desconfiguradas,
+                            atrasada, atrasadas, pierde, pierden, borra,
+                            borran, atrasa, atrasan, reinicia, resetea]).
+vocabulario(reiniciar,     [reinicia, reinician, reinicio, reinicios,
+                            reiniciando, reiniciarse]).
+vocabulario(ventilador,    [ventilador, ventiladores, fan, fans, abanico,
+                            abanicos, cooler, coolers]).
+vocabulario(girar,         [gira, giran, funciona, funcionan, mueve, mueven,
+                            prende, prenden, enciende, encienden]).
+vocabulario(detenido,      [detenido, detenidos, detenida, parado, parados,
+                            quieto, quietos, trabado, trabados, frenado]).
+vocabulario(verbo_ruido,   [hace, hacen, suena, suenan, esta, estan, emite,
+                            emiten, tiene, tienen, zumba, zumban]).
+vocabulario(ruido,         [ruido, ruidos, ruidoso, ruidosos, fuerte, duro,
+                            alto, raro, raros, escandaloso, zumbido,
+                            zumbidos]).
+vocabulario(lento,         [lento, lenta, lentos, lentas, lentitud,
+                            lentisimo, lentamente]).
+vocabulario(demorar,       [demora, demoran, tarda, tardan]).
+vocabulario(prep_inicio,   [en, al, para]).
+vocabulario(iniciar,       [iniciar, arrancar, encender, prender, cargar,
+                            bootear, iniciarse, prenderse, arranque, inicio,
+                            encendido]).
+vocabulario(arranque,      [arranque, inicio, encendido, booteo]).
+vocabulario(pantalla,      [pantalla, pantallas, monitor, monitores, display,
+                            pantallazo, pantallazos]).
+vocabulario(azul,          [azul, azules]).
+vocabulario(negro,         [negra, negro, negras, negros, oscura, oscuro,
+                            apagada, apagado]).
+vocabulario(dar,           [da, dan, muestra, muestran, hay, sale, salen,
+                            tiene, tienen, aparece, envia, manda]).
+vocabulario(senal_video,   [imagen, video, senal]).
+vocabulario(verbo_pantalla, [enciende, prende, muestra, ve, da, funciona]).
+vocabulario(linea,         [linea, lineas, raya, rayas, franja, franjas]).
+vocabulario(parpadear,     [parpadea, parpadean, titila, titilan, parpadeo]).
+vocabulario(artefacto,     [artefacto, artefactos, pixel, pixeles, puntos,
+                            manchas, glitch, glitches, cuadros, cuadritos]).
+vocabulario(distorsion,    [distorsionada, distorsionado, deformada,
+                            pixelada, pixelado, rara, corrupta, cortada]).
+vocabulario(congelar,      [congela, congelan, cuelga, cuelgan, traba, traban,
+                            bloquea, bloquean, tilda, tildan, pega, pegan]).
+vocabulario(quedar,        [queda, quedan, quedo]).
+vocabulario(congelado,     [congelado, congelada, congelados, pegado, pegada,
+                            trabado, trabada, colgado, colgada, bloqueado,
+                            bloqueada]).
+vocabulario(responder,     [responde, responden]).
+vocabulario(bloqueo,       [bloqueo, bloqueos, congelamiento, congelamientos,
+                            cuelgue, cuelgues]).
+vocabulario(disco,         [disco, discos, hdd, ssd]).
+vocabulario(clic,          [clic, clics, click, clicks, tic, tics, clac,
+                            golpeteo, golpeteos]).
+vocabulario(detectar,      [detecta, detectan, reconoce, reconocen, encuentra,
+                            encuentran, lee, leen, ve, aparece]).
+vocabulario(detectado,     [encontrado, detectado, reconocido, aparece,
+                            funciona, detecta, reconoce, lee]).
+vocabulario(unidad_temp,   [grados, grado, celsius, centigrados, c]).
+vocabulario(palabra_temp,  [temperatura, temperaturas, temp, cpu,
+                            procesador]).
+vocabulario(puente_temp,   [esta, estan, llega, llego, marca, alcanza, sube,
+                            de, del, la, el, a, en, los, es, son, hasta, por,
+                            encima, arriba, cpu, procesador, temperatura, su,
+                            aproximadamente, unos, casi, mas]).
+vocabulario(anios,         [anos, ano]).
+
+% lexico(?Categoria, +Palabra)
+lexico(Categoria, Palabra) :-
+    vocabulario(Categoria, Palabras),
+    memberchk(Palabra, Palabras).
+
+% Los números pueden venir en cifras o en palabras.
+numero_palabra(un, 1).      numero_palabra(uno, 1).    numero_palabra(una, 1).
+numero_palabra(dos, 2).     numero_palabra(tres, 3).   numero_palabra(cuatro, 4).
+numero_palabra(cinco, 5).   numero_palabra(seis, 6).   numero_palabra(siete, 7).
+numero_palabra(ocho, 8).    numero_palabra(nueve, 9).  numero_palabra(diez, 10).
+numero_palabra(once, 11).   numero_palabra(doce, 12).  numero_palabra(quince, 15).
+numero_palabra(veinte, 20).
+
+tipo_palabra(portatil, portatil).
+tipo_palabra(laptop, portatil).
+tipo_palabra(notebook, portatil).
+tipo_palabra(escritorio, escritorio).
+tipo_palabra(torre, escritorio).
+tipo_palabra(desktop, escritorio).
+tipo_palabra(mesa, escritorio).
+
+%% -----------------------------------------------------------------------------
+%%  G.3 Alias de entrada libre
+%%      alias_sintoma(Sintoma, Frase): frases sinónimas de un síntoma. Los
+%%      alias que el experto enseña desde la interfaz son hechos
+%%      alias_aprendido/2 del bloque de conocimiento aprendido.
+%% -----------------------------------------------------------------------------
+alias_sintoma(no_enciende, 'no enciende').
+alias_sintoma(no_enciende, 'no prende').
+alias_sintoma(no_enciende, 'no arranca').
+alias_sintoma(no_enciende, 'no hay energia').
+alias_sintoma(no_enciende, 'no tiene corriente').
+alias_sintoma(no_enciende, 'no da señales de vida').
+alias_sintoma(no_enciende, 'no arranca el computador').
+alias_sintoma(olor_quemado, 'olor a quemado').
+alias_sintoma(olor_quemado, 'olor quemado').
+alias_sintoma(olor_quemado, 'huele a quemado').
+alias_sintoma(olor_quemado, 'sale humo').
+alias_sintoma(pantalla_negra, 'pantalla negra').
+alias_sintoma(pantalla_negra, 'pantalla en negro').
+alias_sintoma(pantalla_negra, 'monitor negro').
+alias_sintoma(pantalla_negra, 'no muestra imagen').
+alias_sintoma(pantalla_negra, 'pantalla no se ve').
+alias_sintoma(pantalla_negra, 'sin imagen').
+alias_sintoma(pantalla_negra, 'no da video').
+alias_sintoma(pantalla_negra, 'monitor sin señal').
+alias_sintoma(pantalla_azul, 'pantalla azul').
+alias_sintoma(pantalla_azul, 'pantalla en azul').
+alias_sintoma(pantalla_azul, 'pantallazo azul').
+alias_sintoma(reinicios_aleatorios, 'se reinicia solo').
+alias_sintoma(reinicios_aleatorios, 'se reinicia de repente').
+alias_sintoma(reinicios_aleatorios, 'reinicia constantemente').
+alias_sintoma(apagados_repentinos, 'se apaga inesperadamente').
+alias_sintoma(apagados_repentinos, 'se apaga despues de un rato').
+alias_sintoma(apagados_repentinos, 'se apaga jugando').
+alias_sintoma(apagados_repentinos, 'se apaga al jugar').
+alias_sintoma(apagados_repentinos, 'se apaga cuando juego').
+alias_sintoma(ventilador_ruidoso, 'ventilador ruidoso').
+alias_sintoma(ventilador_ruidoso, 'ventilador suena duro').
+alias_sintoma(ventilador_ruidoso, 'ruido del ventilador').
+alias_sintoma(ventilador_ruidoso, 'se calienta').
+alias_sintoma(ventilador_ruidoso, 'se sobrecalienta').
+alias_sintoma(ventilador_ruidoso, 'temperatura muy alta').
+alias_sintoma(ventilador_ruidoso, 'equipo muy caliente').
+alias_sintoma(ventilador_detenido, 'ventilador no gira').
+alias_sintoma(ventilador_detenido, 'ventilador detenido').
+alias_sintoma(ventiladores_giran, 'ventiladores giran').
+alias_sintoma(lentitud, 'va lento').
+alias_sintoma(lentitud, 'computador lento').
+alias_sintoma(lentitud, 'computadora lenta').
+alias_sintoma(lentitud, 'se demora mucho').
+alias_sintoma(arranque_lento, 'arranque lento').
+alias_sintoma(arranque_lento, 'tarda en iniciar').
+alias_sintoma(arranque_lento, 'demora al arrancar').
+alias_sintoma(ruido_clic, 'disco hace clic').
+alias_sintoma(ruido_clic, 'disco hace ruido').
+alias_sintoma(ruido_clic, 'ruido en el disco duro').
+alias_sintoma(disco_no_encontrado, 'disco no encontrado').
+alias_sintoma(disco_no_encontrado, 'no detecta el disco').
+alias_sintoma(disco_no_encontrado, 'no reconoce el disco duro').
+alias_sintoma(disco_no_encontrado, 'disco duro no funciona').
+alias_sintoma(lineas_en_pantalla, 'líneas en la pantalla').
+alias_sintoma(lineas_en_pantalla, 'rayas en la pantalla').
+alias_sintoma(lineas_en_pantalla, 'pantalla con rayas').
+alias_sintoma(lineas_en_pantalla, 'pantalla parpadea').
+alias_sintoma(artefactos_video, 'artefactos en la pantalla').
+alias_sintoma(artefactos_video, 'imagen distorsionada').
+alias_sintoma(artefactos_video, 'pixeles de colores').
+alias_sintoma(bloqueos, 'se congela').
+alias_sintoma(bloqueos, 'se queda congelado').
+alias_sintoma(bloqueos, 'se queda pegado').
+alias_sintoma(bloqueos, 'no responde').
+alias_sintoma(bloqueos, 'deja de responder').
+alias_sintoma(Sintoma, Frase) :-
+    alias_aprendido(Sintoma, Frase).
+
+listar_aliases(Lista) :-
+    findall([Sintoma, Frase], alias_sintoma(Sintoma, Frase), Lista).
+
+%% -----------------------------------------------------------------------------
+%%  G.4 Gramática
+%% -----------------------------------------------------------------------------
+
+% oracion(-Items): una oración es una secuencia de sintagmas.
+% Items contiene hecho(H) por cada sintagma reconocido y desconocida(P) por
+% cada palabra que no pertenece al léxico.
+oracion(Items) --> sintagmas(Items).
+
+sintagmas(Items) -->
+    sintagma(Primero), !,
+    sintagmas(Resto),
+    { append(Primero, Resto, Items) }.
+sintagmas([]) --> [].
+
+% Prioridad: un sintagma con significado, luego conectores y relleno; lo
+% demás se informa como palabra no reconocida.
+sintagma([hecho(H)])       --> hecho_mas_largo(H), !.
+sintagma([])               --> palabra(conector), !.
+sintagma([])               --> relleno, !.
+sintagma([desconocida(P)]) --> [P].
+
+% hecho_mas_largo(-Hecho)
+% Prueba todas las lecturas posibles desde la posición actual y se queda con
+% la que consume más palabras ("tres pitidos cortos" gana a "tres pitidos").
+% Ante un empate se respeta el orden de las cláusulas de hecho//1.
+hecho_mas_largo(Hecho, S0, S) :-
+    findall(H-S1, ( hecho(H, S0, S1), S1 \== S0 ), Lecturas),
+    Lecturas = [Primera|Otras],
+    mas_larga(Otras, Primera, Hecho-S).
+
+mas_larga([], Mejor, Mejor).
+mas_larga([H-S|Resto], H0-S0, Mejor) :-
+    length(S, L), length(S0, L0),
+    (   L < L0
+    ->  mas_larga(Resto, H-S, Mejor)
+    ;   mas_larga(Resto, H0-S0, Mejor)
+    ).
+
+% hecho(-Hecho): sintagmas que producen un hecho simbólico.
+hecho(pitidos(P))       --> patron_pitidos(P).
+hecho(temp_cpu(T))      --> temperatura(T).
+hecho(antiguedad(A))    --> antiguedad(A).
+hecho(tipo_equipo(T))   --> tipo_de_equipo(T).
+hecho(S)                --> sintoma(S).
+hecho(S)                --> frase_alias(S).
+hecho(S)                --> identificador_sintoma(S).
+
+% Un alias (base o aprendido) es una secuencia fija de palabras.
+frase_alias(Sintoma) -->
+    { alias_sintoma(Sintoma, Frase), tokenizar(Frase, Palabras), Palabras \== [] },
+    Palabras.
+
+% El nombre interno de un síntoma ("pantalla_azul") también se acepta.
+identificador_sintoma(Sintoma) -->
+    { sintoma_catalogo(Sintoma, _), atomic_list_concat(Partes, '_', Sintoma) },
+    Partes.
+
+% --- No terminales auxiliares --------------------------------------------------
+palabra(Categoria) --> [P], { lexico(Categoria, P) }.
+
+relleno --> [P], { palabra_de_relleno(P) }.
+
+palabra_de_relleno(P) :-
+    member(Categoria, [determinante, preposicion, intensificador, verbo_estado,
+                       sustantivo_equipo, relleno]),
+    lexico(Categoria, P), !.
+
+opcional(G) --> G.
+opcional(_) --> [].
+
+det_opt            --> opcional(palabra(determinante)).
+se_opt             --> [].
+se_opt             --> [se].
+se_opt             --> [se, me].
+se_opt             --> [me].
+verbo_estado_opt   --> opcional(palabra(verbo_estado)).
+intensificador_opt --> [].
+intensificador_opt --> palabra(intensificador), intensificador_opt.
+negacion           --> palabra(negacion).
+conector_opt       --> opcional(palabra(conector)).
+pantalla           --> det_opt, palabra(pantalla).
+disco              --> det_opt, palabra(disco), opcional([duro]).
+de_colores         --> [de], ( [colores] ; [color] ).
+de_colores         --> ( [raros] ; [raras] ).
+
+numero(N) --> [P], { atom_number(P, N), integer(N) }.
+numero(N) --> [P], { numero_palabra(P, N) }.
+
+% --- Mediciones y datos del equipo -------------------------------------------
+% "95 grados", "la cpu esta a 97 grados", "temperatura de 90"
+temperatura(T) -->
+    numero(T), palabra(unidad_temp),
+    { between(0, 150, T) }.
+temperatura(T) -->
+    det_opt, palabra(palabra_temp), puente_temp, numero(T),
+    opcional(palabra(unidad_temp)),
+    { between(0, 150, T) }.
+
+puente_temp --> [].
+puente_temp --> palabra(puente_temp), puente_temp.
+
+% "7 años", "siete años de antigüedad"
+antiguedad(A) -->
+    numero(A), palabra(anios), opcional(([de], ([antiguedad] ; [uso]))),
+    { between(0, 60, A) }.
+
+% "portátil", "computador de escritorio", "un pc de mesa"
+tipo_de_equipo(T) -->
+    det_opt, opcional(palabra(sustantivo_equipo)), opcional(palabra(preposicion)),
+    [P], { tipo_palabra(P, T) }.
+
+% --- Pitidos de la BIOS ---------------------------------------------------------
+% "tres pitidos cortos", "un pitido largo y dos cortos", "pitidos repetidos"
+patron_pitidos(tres_cortos) -->
+    numero(3), opcional(palabra(pitido)), palabra(corto).
+patron_pitidos(Patron) -->
+    numero(1), opcional(palabra(pitido)), palabra(largo), conector_opt,
+    numero(N), opcional(palabra(pitido)), palabra(corto),
+    { patron_largo_cortos(N, Patron) }.
+patron_pitidos(cortos_repetidos) -->
+    palabra(pitido), opcional(palabra(corto)), palabra(repetido).
+
+patron_largo_cortos(2, un_largo_dos_cortos).
+patron_largo_cortos(3, un_largo_tres_cortos).
+
+% --- Síntomas: energía ----------------------------------------------------------
+sintoma(no_enciende) -->
+    negacion, se_opt, palabra(encender).
+sintoma(no_enciende) -->
+    negacion, [hay], palabra(energia).
+sintoma(led_encendido) -->
+    det_opt, palabra(luz), se_opt, verbo_estado_opt, palabra(encendido).
+sintoma(apagados_repentinos) -->
+    se_opt, palabra(apagar).
+sintoma(apagados_repentinos) -->
+    palabra(apagon), opcional(palabra(repentino)).
+sintoma(olor_quemado) -->
+    palabra(oler), opcional([a]), palabra(quemado).
+sintoma(olor_quemado) -->
+    [humo].
+
+% --- Síntomas: placa base y BIOS -------------------------------------------------
+sintoma(pitidos_arranque) -->
+    opcional(numero(_)), palabra(pitido).
+sintoma(hora_incorrecta) -->
+    se_opt, palabra(verbo_hora), det_opt, palabra(hora), y_hora_opt.
+sintoma(hora_incorrecta) -->
+    det_opt, palabra(hora), y_hora_opt, se_opt, verbo_estado_opt,
+    palabra(hora_mal).
+
+% --- Síntomas: procesador y refrigeración ----------------------------------------
+sintoma(reinicios_aleatorios) -->
+    se_opt, palabra(reiniciar).
+sintoma(ventilador_detenido) -->
+    det_opt, palabra(ventilador), negacion, se_opt, palabra(girar).
+sintoma(ventilador_detenido) -->
+    det_opt, palabra(ventilador), verbo_estado_opt, palabra(detenido).
+sintoma(ventiladores_giran) -->
+    det_opt, palabra(ventilador), opcional([si]), se_opt, palabra(girar).
+sintoma(ventilador_ruidoso) -->
+    det_opt, palabra(ventilador), opcional(palabra(verbo_ruido)),
+    intensificador_opt, palabra(ruido).
+sintoma(ventilador_ruidoso) -->
+    palabra(ruido), palabra(preposicion), det_opt, palabra(ventilador).
+sintoma(lentitud) -->
+    verbo_estado_opt, intensificador_opt, palabra(lento).
+sintoma(lentitud) -->
+    se_opt, palabra(demorar), intensificador_opt.
+
+% --- Síntomas: memoria e inestabilidad -------------------------------------------
+sintoma(pantalla_azul) -->
+    pantalla, se_opt, verbo_estado_opt, opcional(palabra(preposicion)),
+    palabra(azul).
+sintoma(pantalla_azul) -->
+    [bsod].
+sintoma(bloqueos) -->
+    se_opt, palabra(congelar).
+sintoma(bloqueos) -->
+    se_opt, palabra(quedar), palabra(congelado).
+sintoma(bloqueos) -->
+    negacion, palabra(responder).
+sintoma(bloqueos) -->
+    [deja, de, responder].
+sintoma(bloqueos) -->
+    palabra(bloqueo).
+
+% --- Síntomas: almacenamiento -----------------------------------------------------
+sintoma(arranque_lento) -->
+    det_opt, palabra(arranque), verbo_estado_opt, intensificador_opt,
+    palabra(lento).
+sintoma(arranque_lento) -->
+    se_opt, palabra(demorar), intensificador_opt, palabra(prep_inicio),
+    det_opt, palabra(iniciar).
+sintoma(arranque_lento) -->
+    verbo_estado_opt, intensificador_opt, palabra(lento),
+    palabra(prep_inicio), det_opt, palabra(iniciar).
+sintoma(arranque_lento) -->
+    palabra(encender), intensificador_opt, palabra(lento).
+sintoma(ruido_clic) -->
+    disco, opcional(palabra(verbo_ruido)), opcional(palabra(determinante)),
+    intensificador_opt, ( palabra(clic) ; palabra(ruido) ).
+sintoma(ruido_clic) -->
+    opcional(palabra(verbo_ruido)), opcional(palabra(determinante)),
+    palabra(clic), opcional((palabra(preposicion), disco)).
+sintoma(ruido_clic) -->
+    palabra(ruido), palabra(preposicion), disco.
+sintoma(disco_no_encontrado) -->
+    disco, negacion, se_opt, palabra(detectado).
+sintoma(disco_no_encontrado) -->
+    negacion, se_opt, palabra(detectar), disco.
+
+% --- Síntomas: video ---------------------------------------------------------------
+sintoma(pantalla_negra) -->
+    pantalla, se_opt, verbo_estado_opt, opcional(palabra(preposicion)),
+    palabra(negro).
+sintoma(pantalla_negra) -->
+    pantalla, se_opt, palabra(apagar).
+sintoma(pantalla_negra) -->
+    pantalla, negacion, se_opt, palabra(verbo_pantalla),
+    opcional((det_opt, palabra(senal_video))).
+sintoma(pantalla_negra) -->
+    opcional(pantalla), [sin], palabra(senal_video).
+sintoma(pantalla_negra) -->
+    negacion, se_opt, palabra(dar), det_opt, palabra(senal_video).
+sintoma(pantalla_negra) -->
+    negacion, se_opt, [ve], opcional([nada]),
+    opcional((palabra(preposicion), pantalla)).
+sintoma(lineas_en_pantalla) -->
+    palabra(linea), opcional(de_colores),
+    opcional((palabra(preposicion), pantalla)).
+sintoma(lineas_en_pantalla) -->
+    pantalla, [con], palabra(linea).
+sintoma(lineas_en_pantalla) -->
+    pantalla, palabra(parpadear).
+sintoma(lineas_en_pantalla) -->
+    palabra(parpadear), opcional(pantalla).
+sintoma(artefactos_video) -->
+    palabra(artefacto), opcional(de_colores),
+    opcional((palabra(preposicion), det_opt, ( palabra(pantalla) ; [imagen] ))).
+sintoma(artefactos_video) -->
+    det_opt, [imagen], se_opt, verbo_estado_opt, palabra(distorsion).
+
+y_hora_opt --> [].
+y_hora_opt --> ( [y] ; [e] ), det_opt, palabra(hora).
+
+%% -----------------------------------------------------------------------------
+%%  G.5 Interfaz de la DCG para Python
+%% -----------------------------------------------------------------------------
+
+% parsear_oracion(+Texto, -Hechos, -NoReconocidas)
+% Hechos usa los mismos formatos que consultar_caso/2 (síntomas, temp_cpu/1,
+% pitidos/1 y equipo/2), sin duplicados y en el orden en que aparecen.
+parsear_oracion(Texto, Hechos, NoReconocidas) :-
+    tokenizar(Texto, Palabras),
+    phrase(oracion(Items), Palabras), !,
+    findall(H, member(hecho(H), Items), Crudos),
+    findall(P, member(desconocida(P), Items), Desconocidas),
+    combinar_equipo(Crudos, Combinados),
+    list_to_set(Combinados, Hechos),
+    list_to_set(Desconocidas, NoReconocidas).
+
+% El tipo y la antigüedad pueden aparecer separados en la oración
+% ("mi portátil ... tiene 7 años"); se combinan en un solo equipo/2.
+% Sin antigüedad el tipo solo no aporta a ninguna regla y se omite.
+combinar_equipo(Crudos, Hechos) :-
+    partition(dato_de_equipo, Crudos, DatosEquipo, Otros),
+    (   memberchk(antiguedad(A), DatosEquipo)
+    ->  ( memberchk(tipo_equipo(T), DatosEquipo) -> true ; T = desconocido ),
+        append(Otros, [equipo(T, A)], Hechos)
+    ;   Hechos = Otros
+    ).
+
+dato_de_equipo(antiguedad(_)).
+dato_de_equipo(tipo_equipo(_)).
+
+% parsear_oracion_texto(+Texto, -HechosTexto, -NoReconocidas)
+% Igual que parsear_oracion/3, con cada hecho escrito como átomo Prolog.
+parsear_oracion_texto(Texto, HechosTexto, NoReconocidas) :-
+    parsear_oracion(Texto, Hechos, NoReconocidas),
+    maplist(termino_a_atomo, Hechos, HechosTexto).
+
+termino_a_atomo(Termino, Atomo) :-
+    format(atom(Atomo), '~q', [Termino]).
+
+
+%% =============================================================================
+%%  PARTE H. ADQUISICIÓN DINÁMICA DE CONOCIMIENTO (MODO EXPERTO)
+%%
+%%  regla_aprendida(Id, Nombre, Componente, Requeridas, Excluyentes,
+%%                  Certeza, Gravedad, Accion)
+%%    Requeridas y Excluyentes son listas de condiciones: síntomas del
+%%    catálogo, pitidos(Patron), prueba(Nombre, Resultado), temp_cpu_alta o
+%%    equipo_antiguo. La regla genérica R26 (parte B) las evalúa.
+%%
+%%  Python valida la regla con validar_regla/8, la inyecta con assertz/1 y
+%%  reescribe el bloque de conocimiento aprendido al final de este archivo
+%%  con el texto que produce contenido_aprendido/1.
+%% =============================================================================
+
+% validar_regla(+Id, +Nombre, +Componente, +Requeridas, +Excluyentes,
+%               +Certeza, +Gravedad, +Accion)
+validar_regla(Id, Nombre, Componente, Requeridas, Excluyentes,
+              Certeza, Gravedad, Accion) :-
+    identificador_valido(Id),
+    \+ gravedad(Id, _),                      % no reemplaza otro diagnóstico
+    atom(Nombre), Nombre \== '',
+    atom(Accion), Accion \== '',
+    atom(Componente), componente(Componente, _),
+    memberchk(Certeza, [alta, media]),
+    memberchk(Gravedad, [baja, media, alta]),
+    is_list(Requeridas), Requeridas \== [],
+    is_list(Excluyentes),
+    forall(member(C, Requeridas), condicion_valida(C)),
+    forall(member(C, Excluyentes), condicion_valida(C)),
+    once(( member(S, Requeridas), atom(S), sintoma_catalogo(S, _) )),
+    \+ ( member(C, Requeridas), memberchk(C, Excluyentes) ).
+
+identificador_valido(Id) :-
+    atom(Id),
+    atom_codes(Id, [Primero|Resto]),
+    between(0'a, 0'z, Primero),
+    forall(member(C, Resto),
+           ( between(0'a, 0'z, C) ; between(0'0, 0'9, C) ; C =:= 0'_ )).
+
+% condicion_valida(+Condicion)  (cláusulas excluyentes con corte)
+condicion_valida(C) :- \+ ground(C), !, fail.
+condicion_valida(temp_cpu_alta) :- !.
+condicion_valida(equipo_antiguo) :- !.
+condicion_valida(pitidos(P)) :- !, codigo_pitido(P, _).
+condicion_valida(prueba(N, R)) :- !, prueba_catalogo(N, _), resultado_prueba(R, _).
+condicion_valida(S) :- atom(S), sintoma_catalogo(S, _).
+
+% aprender_regla/8: validación más assertz/1 en una sola llamada (útil desde
+% la consola de SWI-Prolog; la persistencia la hace Python).
+aprender_regla(Id, Nombre, Componente, Requeridas, Excluyentes,
+               Certeza, Gravedad, Accion) :-
+    validar_regla(Id, Nombre, Componente, Requeridas, Excluyentes,
+                  Certeza, Gravedad, Accion),
+    assertz(regla_aprendida(Id, Nombre, Componente, Requeridas, Excluyentes,
+                            Certeza, Gravedad, Accion)).
+
+% olvidar_regla(+Id)
+olvidar_regla(Id) :-
+    retract(regla_aprendida(Id, _, _, _, _, _, _, _)).
+
+% listar_reglas_aprendidas(-Lista)
+% [[Id, Nombre, Componente, Requeridas, Excluyentes, Certeza, Gravedad, Accion]]
+% con las condiciones escritas como átomos.
+listar_reglas_aprendidas(Lista) :-
+    findall([Id, Nombre, Componente, ReqTexto, ExclTexto, Certeza, Gravedad, Accion],
+            ( regla_aprendida(Id, Nombre, Componente, Req, Excl,
+                              Certeza, Gravedad, Accion),
+              maplist(termino_a_atomo, Req, ReqTexto),
+              maplist(termino_a_atomo, Excl, ExclTexto) ),
+            Lista).
+
+% agregar_alias(+Frase, +Sintoma): enseña una frase nueva para un síntoma.
+agregar_alias(Frase, Sintoma) :-
+    atom(Frase),
+    atom(Sintoma),
+    sintoma_catalogo(Sintoma, _),
+    \+ alias_sintoma(Sintoma, Frase),
+    assertz(alias_aprendido(Sintoma, Frase)).
+
+% olvidar_alias(+Sintoma, +Frase)
+olvidar_alias(Sintoma, Frase) :-
+    retract(alias_aprendido(Sintoma, Frase)).
+
+listar_aliases_aprendidos(Lista) :-
+    findall([Sintoma, Frase], alias_aprendido(Sintoma, Frase), Lista).
+
+% contenido_aprendido(-Texto)
+% Cláusulas del bloque de conocimiento aprendido, listas para escribirse en
+% el archivo. portray_clause/1 cita los átomos para que el archivo vuelva a
+% cargarse con consult/1. Cada regla va precedida de un comentario con la
+% regla lógica equivalente.
+contenido_aprendido(Texto) :-
+    with_output_to(string(Cadena), escribir_conocimiento_aprendido),
+    atom_string(Texto, Cadena).
+
+escribir_conocimiento_aprendido :-
+    forall(alias_aprendido(Sintoma, Frase),
+           portray_clause(alias_aprendido(Sintoma, Frase))),
+    forall(regla_aprendida(Id, Nombre, Componente, Req, Excl,
+                           Certeza, Gravedad, Accion),
+           ( nl,
+             comentar_regla(Id, Nombre, Req, Excl, Certeza),
+             portray_clause(regla_aprendida(Id, Nombre, Componente, Req, Excl,
+                                            Certeza, Gravedad, Accion)) )).
+
+comentar_regla(Id, Nombre, Requeridas, Excluyentes, Certeza) :-
+    format('% R26 aprendida: ~w~n', [Nombre]),
+    format('%   diagnostico(E, ~q, ~q) :-~n', [Id, Certeza]),
+    forall(member(C, Requeridas),
+           ( condicion_como_meta(C, Meta), format('%       ~w,~n', [Meta]) )),
+    forall(member(C, Excluyentes),
+           ( condicion_como_meta(C, Meta), format('%       \\+ ~w,~n', [Meta]) )),
+    format('%       \\+ descartado(E, ~q).~n', [Id]).
+
+condicion_como_meta(temp_cpu_alta, 'sobrecalentamiento(E)') :- !.
+condicion_como_meta(equipo_antiguo, 'equipo_antiguo(E)') :- !.
+condicion_como_meta(pitidos(P), Meta) :- !,
+    format(atom(Meta), 'pitidos(E, ~q)', [P]).
+condicion_como_meta(prueba(N, R), Meta) :- !,
+    format(atom(Meta), 'prueba(E, ~q, ~q)', [N, R]).
+condicion_como_meta(Sintoma, Meta) :-
+    format(atom(Meta), 'observado(E, ~q)', [Sintoma]).
+
+
+%% =============================================================================
+%%  CONOCIMIENTO APRENDIDO
+%%  Lo escribe motor_inferencia.py desde el modo experto. No lo edites a mano:
+%%  el bloque entre las dos marcas se reemplaza completo cada vez que el
+%%  experto agrega o elimina un alias o una regla.
+%% =============================================================================
+%% === INICIO CONOCIMIENTO APRENDIDO (no editar a mano) ===
+%% === FIN CONOCIMIENTO APRENDIDO ===

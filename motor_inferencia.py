@@ -5,13 +5,16 @@ Puente Python <-> SWI-Prolog (PySwip) del Sistema Experto de Diagnóstico y
 Soporte Técnico para Fallos de Hardware.
 
 RESPONSABILIDAD DE ESTE MÓDULO
-    Python solo hace tres cosas:
+    Python solo hace cuatro cosas:
       1. Cargar ``base_conocimiento.pl`` en el motor de SWI-Prolog.
-      2. Enviar los datos de entrada e invocar los predicados de Prolog.
+      2. Enviar los datos de entrada (o la oración libre, que analiza la DCG
+         de Prolog) e invocar los predicados de Prolog.
       3. Recibir las listas de resultados y presentarlas en consola.
+      4. Persistir en el archivo ``.pl`` el conocimiento que el experto
+         inyecta en caliente con ``assertz/1``.
 
-    NO hay lógica de inferencia, descarte, validación ni cálculo de severidad
-    aquí: todo eso vive en Prolog.
+    NO hay lógica de inferencia, descarte, validación de reglas, análisis del
+    lenguaje ni cálculo de severidad aquí: todo eso vive en Prolog.
 """
 
 from __future__ import annotations
@@ -29,8 +32,18 @@ from pyswip import Prolog
 
 RUTA_BASE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                          "base_conocimiento.pl")
+# Archivo de la versión anterior del modo experto. Si existe, sus alias se
+# migran una sola vez al bloque de conocimiento aprendido del archivo .pl.
 RUTA_ALIAS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "aliases_aprendidos.json")
+
+MARCA_INICIO = "%% === INICIO CONOCIMIENTO APRENDIDO (no editar a mano) ==="
+MARCA_FIN = "%% === FIN CONOCIMIENTO APRENDIDO ==="
+
+PATRON_ID = re.compile(r"[a-z][a-z0-9_]*")
+# Un elemento de la sintaxis formal: identificador o término como temp_cpu(90).
+PATRON_FORMAL = re.compile(r"[a-z][a-z0-9_]*(\(.*\))?")
+CONDICIONES_ESPECIALES = ("temp_cpu_alta", "equipo_antiguo")
 
 
 # --------------------------------------------------------------------------- #
@@ -57,6 +70,8 @@ class Respuesta:
     descartados: list[str] = field(default_factory=list)
     explicaciones: list[ExplicacionDiagnostico] = field(default_factory=list)
     sugerencias: list[Sugerencia] = field(default_factory=list)
+    hechos_dcg: list[str] = field(default_factory=list)
+    no_reconocidas: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -83,27 +98,53 @@ class Sugerencia:
     hipotesis: list[str] = field(default_factory=list)
 
 
+@dataclass
+class AnalisisOracion:
+    """Resultado de ``parsear_oracion_texto/3`` (la DCG de Prolog)."""
+    hechos: list[str] = field(default_factory=list)
+    no_reconocidas: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ReglaAprendida:
+    """Diagnóstico creado por el experto (hecho ``regla_aprendida/8``)."""
+    id: str
+    nombre: str
+    componente: str
+    requeridas: list[str]
+    excluyentes: list[str]
+    certeza: str
+    gravedad: str
+    accion: str
+
+
 # --------------------------------------------------------------------------- #
 #  Motor
 # --------------------------------------------------------------------------- #
 class MotorInferencia:
     """Carga la base de conocimiento y expone funciones que consultan Prolog."""
 
-    def __init__(self, ruta_base: str = RUTA_BASE) -> None:
+    def __init__(self, ruta_base: str = RUTA_BASE, ruta_alias: str = RUTA_ALIAS) -> None:
         if not os.path.isfile(ruta_base):
             raise FileNotFoundError(f"No se encontró la base de conocimiento: {ruta_base}")
         self._prolog = Prolog()
         self._lock = RLock()
-        self._ruta_alias = RUTA_ALIAS
-        self._aliases_aprendidos: list[tuple[str, str]] = []
+        self._ruta_base = os.path.abspath(ruta_base)
+        self._ruta_alias = ruta_alias
         # PySwip espera rutas con "/" aunque el sistema operativo sea Windows.
-        list(self._prolog.query(f"consult('{ruta_base.replace(os.sep, '/')}')"))
-        self._cargar_aliases_aprendidos()
+        list(self._prolog.query(f"consult({self._atomo(self._ruta_base.replace(os.sep, '/'))})"))
+        self._migrar_aliases_json()
+
+    @property
+    def ruta_base(self) -> str:
+        """Archivo .pl cargado; allí se persiste el conocimiento aprendido."""
+        return self._ruta_base
 
     # -- utilidades internas ------------------------------------------------ #
     @staticmethod
     def _atomo(texto: str) -> str:
         """Escapa un texto para enviarlo a Prolog como átomo entre comillas."""
+        texto = re.sub(r"[\r\n\t]+", " ", str(texto))
         return "'" + texto.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
     @staticmethod
@@ -118,6 +159,10 @@ class MotorInferencia:
         if not soluciones:
             raise RuntimeError(f"Prolog no devolvió solución para: {consulta}")
         return soluciones[0]
+
+    def _se_cumple(self, consulta: str) -> bool:
+        with self._lock:
+            return bool(list(self._prolog.query(consulta, maxresult=1)))
 
     @staticmethod
     def _a_respuesta(crudo: list) -> Respuesta:
@@ -134,9 +179,33 @@ class MotorInferencia:
             descartados=[str(x) for x in descartados],
         )
 
+    # -- lenguaje natural (DCG) ---------------------------------------------- #
+    def parsear_oracion(self, texto: str) -> AnalisisOracion:
+        """Envía la oración a la DCG de Prolog y devuelve los hechos extraídos.
+
+        Invoca ``parsear_oracion_texto(+Texto, -Hechos, -NoReconocidas)``:
+        Prolog tokeniza, analiza con ``phrase/2`` y responde con los hechos
+        simbólicos (``no_enciende``, ``temp_cpu(95)``...) y las palabras que
+        no pertenecen a su léxico.
+        """
+        if texto is None or not str(texto).strip():
+            return AnalisisOracion()
+        sol = self._una_solucion(
+            f"parsear_oracion_texto({self._atomo(texto)}, Hechos, NoReconocidas)"
+        )
+        return AnalisisOracion(
+            hechos=[str(h) for h in sol["Hechos"]],
+            no_reconocidas=[str(p) for p in sol["NoReconocidas"]],
+        )
+
     # -- consultas a Prolog ------------------------------------------------- #
     def consultar_texto(self, texto: str) -> Respuesta:
-        """Procesa texto libre con alias dinámicos y preserva elementos inválidos."""
+        """Consulta con texto: sintaxis formal, oración libre o una mezcla.
+
+        Los elementos formales separados por comas (``no_enciende``,
+        ``prueba(cambio_cable, ok)``) se envían tal cual; las frases en
+        español se analizan con la DCG de Prolog.
+        """
         if texto is None or not str(texto).strip():
             return Respuesta("entrada_vacia")
 
@@ -144,66 +213,18 @@ class MotorInferencia:
         if not partes:
             return Respuesta("entrada_vacia")
 
-        es_texto_libre = any(" " in parte and "(" not in parte for parte in partes)
-        if es_texto_libre:
-            lista = self._parsear_texto_natural(str(texto))
-            if not lista:
-                return Respuesta("entrada_invalida")
-            return self.consultar_lista(lista)
+        formales = [p for p in partes if PATRON_FORMAL.fullmatch(p)]
+        naturales = [p for p in partes if not PATRON_FORMAL.fullmatch(p)]
+        analisis = self.parsear_oracion(", ".join(naturales)) if naturales else AnalisisOracion()
 
-        return self.consultar_lista(partes)
-
-    def _parsear_texto_natural(self, texto: str) -> list[str]:
-        """Convierte frases normales a síntomas del catálogo usando aliases dinámicos."""
-        if not texto or not texto.strip():
-            return []
-
-        texto_limpio = texto.strip()
-        partes = self._split_top_level(texto_limpio)
-        if not partes:
-            return []
-
-        validos = {valor for valor, _ in self.listar_sintomas()}
-        alias_map = {self._normalizar_alias(frase): sintoma for sintoma, frase in self.listar_aliases()}
-
-        if any("(" in parte or parte.startswith("temp_cpu") or parte.startswith("pitidos(") or parte.startswith("prueba(") or parte.startswith("equipo(") for parte in partes):
-            entrada: list[str] = []
-            for parte in partes:
-                parte_limpia = parte.strip()
-                if not parte_limpia:
-                    continue
-                if parte_limpia in validos:
-                    entrada.append(parte_limpia)
-                elif parte_limpia.startswith("temp_cpu(") or parte_limpia.startswith("pitidos(") or parte_limpia.startswith("prueba(") or parte_limpia.startswith("equipo("):
-                    entrada.append(parte_limpia)
-                else:
-                    for alias, sintoma in sorted(alias_map.items(), key=lambda item: len(item[0]), reverse=True):
-                        if alias in self._normalizar_alias(parte_limpia) and sintoma not in entrada:
-                            entrada.append(sintoma)
-                            break
-            return entrada
-
-        encontrado: list[str] = []
-        for parte in partes:
-            bloque = self._normalizar_alias(parte)
-            if not bloque:
-                continue
-            bloque_compacto = bloque.replace(" ", "_")
-            if bloque_compacto in validos and bloque_compacto not in encontrado:
-                encontrado.append(bloque_compacto)
-                continue
-            for alias, sintoma in sorted(alias_map.items(), key=lambda item: len(item[0]), reverse=True):
-                if alias in bloque and sintoma not in encontrado:
-                    encontrado.append(sintoma)
-
-        if not encontrado:
-            texto_norm = re.sub(r"[^a-z0-9\s]+", " ", texto.lower())
-            texto_norm = re.sub(r"\s+", " ", texto_norm).strip()
-            for nombre in validos:
-                if nombre.replace("_", " ") in texto_norm and nombre not in encontrado:
-                    encontrado.append(nombre)
-
-        return encontrado
+        lista = list(dict.fromkeys(formales + analisis.hechos))
+        if not lista:
+            respuesta = Respuesta("entrada_invalida")
+        else:
+            respuesta = self.consultar_lista(lista)
+        respuesta.hechos_dcg = analisis.hechos
+        respuesta.no_reconocidas = analisis.no_reconocidas
+        return respuesta
 
     @staticmethod
     def _split_top_level(texto: str) -> list[str]:
@@ -292,88 +313,86 @@ class MotorInferencia:
         sol = self._una_solucion("listar_sintomas(L)")
         return [(str(s[0]), str(s[1])) for s in sol["L"]]
 
+    def listar_componentes(self) -> list[tuple[str, str]]:
+        with self._lock:
+            return [(str(r["C"]), str(r["D"]))
+                    for r in self._prolog.query("componente(C, D)")]
+
+    def listar_condiciones_especiales(self) -> list[str]:
+        """Condiciones no sintomáticas que puede usar una regla aprendida."""
+        with self._lock:
+            pitidos = [f"pitidos({r['P']})" for r in self._prolog.query("codigo_pitido(P, _)")]
+            pruebas = [f"prueba({r['N']}, {r['R']})"
+                       for r in self._prolog.query("prueba_catalogo(N, _), resultado_prueba(R, _)")]
+        return [*CONDICIONES_ESPECIALES, *pitidos, *pruebas]
+
+    # -- alias aprendidos ------------------------------------------------------ #
     def listar_aliases(self) -> list[tuple[str, str]]:
-        """Lista los aliases dinámicos aprendidos por el usuario experto."""
-        with self._lock:
-            sol = self._una_solucion("listar_aliases(L)")
+        """Lista todos los alias (base y aprendidos) que usa la DCG."""
+        sol = self._una_solucion("listar_aliases(L)")
         return [(str(item[0]), str(item[1])) for item in sol["L"]]
-
-    def aprender_alias(self, frase: str, sintoma: str) -> bool:
-        """Guarda de forma persistente un alias vinculado a un síntoma conocido."""
-        frase = " ".join(frase.split())
-        sintoma = sintoma.strip()
-        if not frase or len(frase) > 120 or not re.fullmatch(r"[a-z][a-z0-9_]*", sintoma):
-            return False
-
-        with self._lock:
-            if not list(self._prolog.query(f"sintoma_catalogo({sintoma}, _)")):
-                return False
-
-            normalizada = self._normalizar_alias(frase)
-            existentes = self.listar_aliases()
-            coincidencias = [
-                (nombre, alias)
-                for nombre, alias in existentes
-                if self._normalizar_alias(alias) == normalizada
-            ]
-            if coincidencias:
-                return all(nombre == sintoma for nombre, _ in coincidencias)
-
-            consulta = f"agregar_alias({self._atomo(frase)}, {sintoma})"
-            if not list(self._prolog.query(consulta)):
-                return False
-
-            self._aliases_aprendidos.append((sintoma, frase))
-            try:
-                self._guardar_aliases_aprendidos()
-            except OSError:
-                self._prolog.query(
-                    f"retract(alias_sintoma({sintoma}, {self._atomo(frase)}))"
-                )
-                self._aliases_aprendidos.pop()
-                raise
-        return True
 
     def listar_aliases_aprendidos(self) -> list[tuple[str, str]]:
         """Devuelve solo las asociaciones personalizadas persistidas por el experto."""
+        sol = self._una_solucion("listar_aliases_aprendidos(L)")
+        return [(str(item[0]), str(item[1])) for item in sol["L"]]
+
+    def aprender_alias(self, frase: str, sintoma: str) -> bool:
+        """Inyecta un alias con ``assertz/1`` y lo persiste en el archivo .pl."""
+        frase = " ".join(frase.split())
+        sintoma = sintoma.strip()
+        if not frase or len(frase) > 120 or not PATRON_ID.fullmatch(sintoma):
+            return False
+
         with self._lock:
-            return list(self._aliases_aprendidos)
+            if not self._se_cumple(f"sintoma_catalogo({sintoma}, _)"):
+                return False
+            normalizada = self._normalizar_alias(frase)
+            coincidencias = [
+                nombre for nombre, alias in self.listar_aliases()
+                if self._normalizar_alias(alias) == normalizada
+            ]
+            if coincidencias:
+                return all(nombre == sintoma for nombre in coincidencias)
+
+            if not self._se_cumple(f"agregar_alias({self._atomo(frase)}, {sintoma})"):
+                return False
+            try:
+                self._persistir_conocimiento()
+            except OSError:
+                self._se_cumple(f"olvidar_alias({sintoma}, {self._atomo(frase)})")
+                raise
+        return True
 
     def eliminar_alias_aprendido(self, frase: str) -> bool:
-        """Elimina un alias personalizado de Prolog y de su archivo persistente."""
+        """Elimina un alias personalizado de la memoria y del archivo .pl."""
         normalizada = self._normalizar_alias(frase)
         if not normalizada:
             return False
 
         with self._lock:
-            indice = next(
+            encontrado = next(
                 (
-                    i for i, (_, alias) in enumerate(self._aliases_aprendidos)
+                    (sintoma, alias) for sintoma, alias in self.listar_aliases_aprendidos()
                     if self._normalizar_alias(alias) == normalizada
                 ),
                 None,
             )
-            if indice is None:
+            if encontrado is None:
                 return False
-
-            sintoma, alias = self._aliases_aprendidos[indice]
-            consulta = f"retract(alias_sintoma({sintoma}, {self._atomo(alias)}))"
-            if not list(self._prolog.query(consulta)):
+            sintoma, alias = encontrado
+            if not self._se_cumple(f"olvidar_alias({sintoma}, {self._atomo(alias)})"):
                 return False
-
-            self._aliases_aprendidos.pop(indice)
             try:
-                self._guardar_aliases_aprendidos()
+                self._persistir_conocimiento()
             except OSError:
-                self._aliases_aprendidos.insert(indice, (sintoma, alias))
-                self._prolog.query(
-                    f"assertz(alias_sintoma({sintoma}, {self._atomo(alias)}))"
-                )
+                self._se_cumple(f"assertz(alias_aprendido({sintoma}, {self._atomo(alias)}))")
                 raise
         return True
 
-    def _cargar_aliases_aprendidos(self) -> None:
-        if not os.path.exists(self._ruta_alias):
+    def _migrar_aliases_json(self) -> None:
+        """Pasa los alias del JSON antiguo al archivo .pl y renombra el JSON."""
+        if not self._ruta_alias or not os.path.exists(self._ruta_alias):
             return
         try:
             with open(self._ruta_alias, encoding="utf-8") as archivo:
@@ -387,70 +406,160 @@ class MotorInferencia:
                 f"El archivo de alias aprendidos no contiene una lista: {self._ruta_alias}"
             )
 
-        for item in datos:
-            if not isinstance(item, dict):
-                raise RuntimeError(f"Registro inválido en {self._ruta_alias}")
-            frase = item.get("frase")
-            sintoma = item.get("sintoma")
-            if not isinstance(frase, str) or not isinstance(sintoma, str):
-                raise RuntimeError(f"Registro inválido en {self._ruta_alias}")
-            frase = " ".join(frase.split())
-            sintoma = sintoma.strip()
-            if (
-                not frase
-                or len(frase) > 120
-                or not re.fullmatch(r"[a-z][a-z0-9_]*", sintoma)
-            ):
-                raise RuntimeError(f"Alias inválido en {self._ruta_alias}: {frase!r}")
+        with self._lock:
+            agregados = 0
+            for item in datos:
+                if not isinstance(item, dict):
+                    raise RuntimeError(f"Registro inválido en {self._ruta_alias}")
+                frase = item.get("frase")
+                sintoma = item.get("sintoma")
+                if not isinstance(frase, str) or not isinstance(sintoma, str):
+                    raise RuntimeError(f"Registro inválido en {self._ruta_alias}")
+                frase = " ".join(frase.split())
+                sintoma = sintoma.strip()
+                if not frase or len(frase) > 120 or not PATRON_ID.fullmatch(sintoma):
+                    raise RuntimeError(f"Alias inválido en {self._ruta_alias}: {frase!r}")
+                if self._se_cumple(f"agregar_alias({self._atomo(frase)}, {sintoma})"):
+                    agregados += 1
+            if agregados:
+                self._persistir_conocimiento()
+            os.replace(self._ruta_alias, self._ruta_alias + ".migrado")
 
-            with self._lock:
-                if not list(self._prolog.query(f"sintoma_catalogo({sintoma}, _)")):
-                    raise RuntimeError(
-                        f"El alias {frase!r} referencia un síntoma inexistente: {sintoma}"
-                    )
-                existentes = self.listar_aliases()
-                if any(
-                    self._normalizar_alias(alias) == self._normalizar_alias(frase)
-                    and nombre != sintoma
-                    for nombre, alias in existentes
-                ):
-                    raise RuntimeError(
-                        f"El alias {frase!r} está asociado a síntomas incompatibles"
-                    )
-                if not any(
-                    self._normalizar_alias(alias) == self._normalizar_alias(frase)
-                    and nombre == sintoma
-                    for nombre, alias in existentes
-                ):
-                    self._prolog.query(
-                        f"agregar_alias({self._atomo(frase)}, {sintoma})"
-                    )
-                self._aliases_aprendidos.append((sintoma, frase))
+    # -- reglas aprendidas (modo experto) ----------------------------------- #
+    def listar_reglas_aprendidas(self) -> list[ReglaAprendida]:
+        """Invoca ``listar_reglas_aprendidas(-Lista)``."""
+        sol = self._una_solucion("listar_reglas_aprendidas(L)")
+        return [
+            ReglaAprendida(
+                id=str(r[0]), nombre=str(r[1]), componente=str(r[2]),
+                requeridas=[str(c) for c in r[3]],
+                excluyentes=[str(c) for c in r[4]],
+                certeza=str(r[5]), gravedad=str(r[6]), accion=str(r[7]),
+            )
+            for r in sol["L"]
+        ]
 
-    def _guardar_aliases_aprendidos(self) -> None:
-        carpeta = os.path.dirname(self._ruta_alias)
+    def crear_regla(
+        self,
+        id_diagnostico: str,
+        nombre: str,
+        componente: str,
+        requeridas: list[str],
+        excluyentes: list[str],
+        certeza: str,
+        gravedad: str,
+        accion: str,
+    ) -> ReglaAprendida:
+        """Valida en Prolog, inyecta con ``assertz/1`` y persiste en el .pl.
+
+        Si la escritura del archivo falla, la regla se retira de la memoria
+        para que memoria y archivo no queden desincronizados.
+        """
+        id_diagnostico = id_diagnostico.strip()
+        nombre = " ".join(nombre.split())
+        accion = " ".join(accion.split())
+        if not PATRON_ID.fullmatch(id_diagnostico) or len(id_diagnostico) > 60:
+            raise ValueError(
+                "El identificador debe empezar con una letra minúscula y usar solo "
+                "minúsculas, números y guion bajo (máximo 60 caracteres)."
+            )
+        if not nombre or len(nombre) > 120:
+            raise ValueError("Escribe un nombre legible de hasta 120 caracteres.")
+        if not accion or len(accion) > 400:
+            raise ValueError("Escribe la acción recomendada (hasta 400 caracteres).")
+        for valor in (componente, certeza, gravedad):
+            if not PATRON_ID.fullmatch(valor):
+                raise ValueError(f"Valor inválido: {valor!r}")
+        condiciones_validas = {s for s, _ in self.listar_sintomas()}
+        condiciones_validas.update(self.listar_condiciones_especiales())
+        for condicion in [*requeridas, *excluyentes]:
+            if condicion not in condiciones_validas:
+                raise ValueError(f"Condición desconocida: {condicion!r}")
+
+        argumentos = ", ".join([
+            id_diagnostico,
+            self._atomo(nombre),
+            componente,
+            self._lista_prolog(requeridas),
+            self._lista_prolog(excluyentes),
+            certeza,
+            gravedad,
+            self._atomo(accion),
+        ])
+        with self._lock:
+            if self._se_cumple(f"gravedad({id_diagnostico}, _)"):
+                raise ValueError(f"Ya existe un diagnóstico con el identificador «{id_diagnostico}».")
+            if not self._se_cumple(f"validar_regla({argumentos})"):
+                raise ValueError(
+                    "Prolog rechazó la regla: revisa que tenga al menos un síntoma "
+                    "requerido y que ninguna condición sea a la vez requerida y excluyente."
+                )
+            self._prolog.assertz(f"regla_aprendida({argumentos})")
+            try:
+                self._persistir_conocimiento()
+            except OSError:
+                self._se_cumple(f"olvidar_regla({id_diagnostico})")
+                raise
+        return next(r for r in self.listar_reglas_aprendidas() if r.id == id_diagnostico)
+
+    def eliminar_regla(self, id_diagnostico: str) -> bool:
+        """Retira la regla con ``retract/1`` y la quita del bloque del .pl."""
+        if not PATRON_ID.fullmatch(id_diagnostico):
+            return False
+        with self._lock:
+            respaldo = next(
+                (r for r in self.listar_reglas_aprendidas() if r.id == id_diagnostico), None
+            )
+            if respaldo is None or not self._se_cumple(f"olvidar_regla({id_diagnostico})"):
+                return False
+            try:
+                self._persistir_conocimiento()
+            except OSError:
+                self._prolog.assertz(
+                    "regla_aprendida(" + ", ".join([
+                        respaldo.id, self._atomo(respaldo.nombre), respaldo.componente,
+                        self._lista_prolog(respaldo.requeridas),
+                        self._lista_prolog(respaldo.excluyentes),
+                        respaldo.certeza, respaldo.gravedad, self._atomo(respaldo.accion),
+                    ]) + ")"
+                )
+                raise
+        return True
+
+    # -- persistencia en el archivo .pl -------------------------------------- #
+    def _persistir_conocimiento(self) -> None:
+        """Reescribe el bloque de conocimiento aprendido de ``base_conocimiento.pl``.
+
+        El contenido lo genera Prolog (``contenido_aprendido/1``, con
+        ``portray_clause/1``) a partir de lo que hay en memoria. La escritura es
+        atómica: se escribe un archivo temporal en la misma carpeta y luego se
+        reemplaza el original con ``os.replace``.
+        """
+        contenido = str(self._una_solucion("contenido_aprendido(T)")["T"])
+        with open(self._ruta_base, encoding="utf-8", newline="") as archivo:
+            texto = archivo.read()
+        salto = "\r\n" if "\r\n" in texto else "\n"
+        cuerpo = contenido.replace("\r\n", "\n").strip("\n")
+        lineas = [MARCA_INICIO, *(cuerpo.split("\n") if cuerpo else []), MARCA_FIN]
+        bloque = salto.join(lineas)
+
+        inicio = texto.find(MARCA_INICIO)
+        fin = texto.find(MARCA_FIN, inicio + 1) if inicio != -1 else -1
+        if inicio != -1 and fin != -1:
+            nuevo = texto[:inicio] + bloque + texto[fin + len(MARCA_FIN):]
+        else:
+            nuevo = texto.rstrip("\r\n") + salto * 2 + bloque + salto
+
+        carpeta = os.path.dirname(self._ruta_base)
         archivo_temporal = None
         try:
             with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=carpeta,
-                prefix=".aliases-",
-                suffix=".tmp",
-                delete=False,
+                mode="w", encoding="utf-8", newline="", dir=carpeta,
+                prefix=".base_conocimiento-", suffix=".tmp", delete=False,
             ) as archivo:
                 archivo_temporal = archivo.name
-                json.dump(
-                    [
-                        {"sintoma": sintoma, "frase": frase}
-                        for sintoma, frase in self._aliases_aprendidos
-                    ],
-                    archivo,
-                    ensure_ascii=False,
-                    indent=2,
-                )
-                archivo.write("\n")
-            os.replace(archivo_temporal, self._ruta_alias)
+                archivo.write(nuevo)
+            os.replace(archivo_temporal, self._ruta_base)
         except OSError:
             if archivo_temporal and os.path.exists(archivo_temporal):
                 os.remove(archivo_temporal)
@@ -509,6 +618,10 @@ _MENSAJES_ESTADO = {
 def formatear_respuesta(resp: Respuesta) -> str:
     """Devuelve la respuesta de Prolog como texto legible para la consola."""
     lineas = [f"Estado: {resp.estado} - {_MENSAJES_ESTADO.get(resp.estado, '')}"]
+    if resp.hechos_dcg:
+        lineas.append("Hechos extraídos por la DCG: " + ", ".join(resp.hechos_dcg))
+    if resp.no_reconocidas:
+        lineas.append("Palabras no reconocidas por la DCG: " + ", ".join(resp.no_reconocidas))
     if resp.descartados:
         lineas.append("Condiciones no reconocidas (ignoradas): "
                       + ", ".join(resp.descartados))

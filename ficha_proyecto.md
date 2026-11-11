@@ -56,7 +56,7 @@ Estados posibles de una consulta: `ok`, `datos_insuficientes`, `entrada_vacia` y
 | Archivo | Contenido |
 | --- | --- |
 | `ficha_proyecto.md` | Esta ficha. |
-| `base_conocimiento.pl` | Exactamente 45 hechos y 25 reglas de inferencia numeradas (R1–R25), con inferencia en 3 niveles, listas, cortes, negación, `findall` y severidad. |
+| `base_conocimiento.pl` | Exactamente 46 hechos y 26 reglas de inferencia numeradas (R1–R26), con inferencia en 3 niveles, listas, cortes, negación, `findall` y severidad; DCG de lenguaje natural y reglas aprendidas en caliente (Entregable 3). |
 | `motor_inferencia.py` | Puente Python–Prolog (PySwip). |
 | `main.py` | Interfaz gráfica Streamlit conectada con SWI-Prolog mediante PySwip. |
 | `main_consola.py` | Interfaz interactiva original por consola. |

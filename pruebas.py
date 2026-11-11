@@ -3,9 +3,14 @@ pruebas.py
 ==========
 Script de pruebas por consola del Sistema Experto de Diagnóstico de Hardware.
 
-Ejecuta once casos base y cinco verificaciones de integración para diagnóstico,
-explicabilidad y sugerencias de datos faltantes. Guarda la salida en
-``evidencia_pruebas.txt``.
+Ejecuta once casos base, verificaciones de integración (diagnóstico,
+explicabilidad, sugerencias, DCG y pre-procesamiento numérico) y las pruebas
+de persistencia del Entregable 3. Guarda la salida en ``evidencia_pruebas.txt``.
+
+Las pruebas que crean reglas trabajan sobre una COPIA temporal de
+``base_conocimiento.pl`` y cada fase corre en un proceso de Python nuevo, que
+equivale a reiniciar la aplicación: así se comprueba que la regla sobrevive
+porque quedó escrita en el archivo .pl y no porque siga en memoria.
 
 Ejecución:  python pruebas.py
 Código de salida: 0 si todos los casos pasan, 1 si alguno falla.
@@ -13,10 +18,16 @@ Código de salida: 0 si todos los casos pasan, 1 si alguno falla.
 Python solo envía la entrada, invoca Prolog y compara/presenta resultados.
 """
 
+import json
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
 
+from motor_inferencia import RUTA_BASE as RUTA_BASE_REAL
 from motor_inferencia import MotorInferencia, formatear_respuesta
+from preprocesamiento import Preprocesador
 
 ARCHIVO_EVIDENCIA = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                  "evidencia_pruebas.txt")
@@ -226,10 +237,21 @@ def ejecutar():
         for d in diferencias:
             print(f"    ! {d}")
     print("\n" + "=" * 72)
-    integraciones_aprobadas = evaluar_integraciones(motor)
+    integraciones_aprobadas, integraciones_total = evaluar_integraciones(motor)
     aprobados += integraciones_aprobadas
-    total_casos = len(CASOS) + 7
-    print(f" INTEGRACIÓN: {integraciones_aprobadas} de 7 casos aprobados")
+    print(f" INTEGRACIÓN: {integraciones_aprobadas} de {integraciones_total} casos aprobados")
+    print("=" * 72)
+    print(" DCG: oraciones en español analizadas por Prolog")
+    dcg_aprobados, dcg_total = evaluar_dcg(motor)
+    aprobados += dcg_aprobados
+    print(f" DCG: {dcg_aprobados} de {dcg_total} oraciones analizadas correctamente")
+    print("=" * 72)
+    print(" PERSISTENCIA: regla aprendida en caliente y reinicios")
+    persistencia_aprobadas, persistencia_total = evaluar_persistencia()
+    aprobados += persistencia_aprobadas
+    print(f" PERSISTENCIA: {persistencia_aprobadas} de {persistencia_total} fases aprobadas")
+    total_casos = len(CASOS) + integraciones_total + dcg_total + persistencia_total
+    print("=" * 72)
     print(f" RESUMEN: {aprobados} de {total_casos} casos aprobados")
     print("=" * 72)
     if aprobados != total_casos:
@@ -267,6 +289,14 @@ def evaluar_integraciones(motor):
             "Reconocimiento de descripción natural ampliada",
             lambda: _caso_lenguaje_natural_ampliado(motor),
         ),
+        (
+            "Oración natural completa -> DCG -> diagnóstico",
+            lambda: _caso_oracion_a_diagnostico(motor),
+        ),
+        (
+            "Pre-procesamiento numérico -> dato/2 -> R3b",
+            lambda: _caso_preprocesamiento(motor),
+        ),
     ]
     aprobados = 0
     for nombre, comprobar in casos:
@@ -277,7 +307,7 @@ def evaluar_integraciones(motor):
             print(f"  Error en {nombre}: {error}")
         aprobados += ok
         print(f"  {nombre}: {'APROBADO' if ok else 'FALLIDO'}")
-    return aprobados
+    return aprobados, len(casos)
 
 
 def _caso_diagnostico_explicable(motor):
@@ -364,5 +394,186 @@ def _caso_lenguaje_natural_ampliado(motor):
     )
 
 
+def _caso_oracion_a_diagnostico(motor):
+    respuesta = motor.consultar_texto(
+        "el pc va lento, la cpu esta a 97 grados y el ventilador suena muy fuerte"
+    )
+    return (
+        respuesta.hechos_dcg == ["lentitud", "temp_cpu(97)", "ventilador_ruidoso"]
+        and [(d.nombre, d.severidad) for d in respuesta.diagnosticos]
+        == [("refrigeracion_deficiente", "critica")]
+    )
+
+
+def _caso_preprocesamiento(motor):
+    preprocesador = Preprocesador()
+    discretos = preprocesador.discretizar(temperatura_cpu=97, uso_disco=93)
+    terminos = [hecho.termino for hecho in discretos]
+    print(f"    clasificador ({preprocesador.metodo}): {terminos}")
+    respuesta = motor.analizar_caso(["ventilador_ruidoso", *terminos])
+    return (
+        terminos == ["dato(temperatura_cpu, critica)", "dato(uso_disco, critico)"]
+        and [(d.nombre, d.severidad) for d in respuesta.diagnosticos]
+        == [("refrigeracion_deficiente", "critica")]
+        and "R3b" in respuesta.explicaciones[0].reglas
+    )
+
+
+# --------------------------------------------------------------------------- #
+#  DCG: oraciones en español -> hechos simbólicos
+# --------------------------------------------------------------------------- #
+ORACIONES_DCG = [
+    ("mi computador no enciende y huele a quemado",
+     ["no_enciende", "olor_quemado"]),
+    ("La pantalla se pone azul, se reinicia sola y el disco hace clic",
+     ["pantalla_azul", "reinicios_aleatorios", "ruido_clic"]),
+    ("el pc va lento y la cpu está a 95 grados",
+     ["lentitud", "temp_cpu(95)"]),
+    ("Al encender hace tres pitidos cortos y la pantalla queda en negro",
+     ["pitidos(tres_cortos)", "pantalla_negra"]),
+    ("suena un pitido largo y dos cortos",
+     ["pitidos(un_largo_dos_cortos)"]),
+    ("mi portátil de 7 años pierde la fecha y hora",
+     ["hora_incorrecta", "equipo(portatil,7)"]),
+    ("la pantalla no muestra imagen pero los ventiladores giran",
+     ["pantalla_negra", "ventiladores_giran"]),
+    ("tarda mucho en iniciar y el disco duro hace ruido",
+     ["arranque_lento", "ruido_clic"]),
+    ("aparecen rayas de colores en la pantalla y la imagen se ve distorsionada",
+     ["lineas_en_pantalla", "artefactos_video"]),
+    ("el led está encendido, el ventilador no gira y se queda congelado",
+     ["led_encendido", "ventilador_detenido", "bloqueos"]),
+]
+
+
+def evaluar_dcg(motor):
+    """Cada oración debe producir exactamente los hechos esperados."""
+    aprobados = 0
+    for oracion, esperados in ORACIONES_DCG:
+        analisis = motor.parsear_oracion(oracion)
+        ok = analisis.hechos == esperados
+        aprobados += ok
+        print(f"  «{oracion}»")
+        print(f"      hechos: {analisis.hechos}  no reconocidas: {analisis.no_reconocidas}"
+              f"  -> {'APROBADO' if ok else 'FALLIDO (esperado ' + str(esperados) + ')'}")
+    return aprobados, len(ORACIONES_DCG)
+
+
+# --------------------------------------------------------------------------- #
+#  Persistencia de reglas aprendidas (cada fase en un proceso nuevo)
+# --------------------------------------------------------------------------- #
+REGLA_PRUEBA = dict(
+    id_diagnostico="fuente_sobrecargada",
+    nombre="Fuente de poder sobrecargada",
+    componente="fuente_poder",
+    requeridas=["apagados_repentinos", "olor_quemado"],
+    excluyentes=["no_enciende"],
+    certeza="media",
+    gravedad="alta",
+    accion="Revisar el consumo del equipo e instalar una fuente de mayor potencia.",
+)
+ORACION_PRUEBA = "se apaga de repente y huele a quemado"
+ALIAS_PRUEBA = ("se muere el pc", "apagados_repentinos")
+FASES = [
+    ("crear", "Crear regla en caliente (assertz + escritura en el .pl)"),
+    ("verificar", "Reinicio: la regla y el alias siguen en el .pl y diagnostican"),
+    ("eliminar", "Eliminar regla y alias (retract + bloque del .pl)"),
+    ("verificar_eliminada", "Reinicio: la regla ya no existe"),
+]
+
+
+def evaluar_persistencia():
+    carpeta = tempfile.mkdtemp(prefix="harddiag_prueba_")
+    copia = os.path.join(carpeta, "base_conocimiento.pl")
+    shutil.copyfile(RUTA_BASE_REAL, copia)
+    print(f"  Copia temporal de la base: {copia}")
+    aprobadas = 0
+    try:
+        for fase, descripcion in FASES:
+            proceso = subprocess.run(
+                [sys.executable, os.path.abspath(__file__), "--fase", fase, copia],
+                capture_output=True, text=True, encoding="utf-8", timeout=120,
+            )
+            try:
+                resultado = json.loads(proceso.stdout.strip().splitlines()[-1])
+            except (IndexError, json.JSONDecodeError):
+                resultado = {"ok": False, "detalle": proceso.stderr.strip()[-400:]}
+            aprobadas += bool(resultado.get("ok"))
+            print(f"  [{fase}] {descripcion}: {'APROBADO' if resultado.get('ok') else 'FALLIDO'}")
+            for clave, valor in resultado.items():
+                if clave != "ok":
+                    print(f"      {clave}: {valor}")
+    finally:
+        shutil.rmtree(carpeta, ignore_errors=True)
+    return aprobadas, len(FASES)
+
+
+def _bloque_del_archivo(ruta):
+    with open(ruta, encoding="utf-8") as archivo:
+        texto = archivo.read()
+    inicio = texto.index("=== INICIO CONOCIMIENTO APRENDIDO")
+    return texto[inicio:texto.index("=== FIN CONOCIMIENTO APRENDIDO")]
+
+
+def ejecutar_fase(fase, ruta):
+    """Corre en un proceso nuevo: carga la copia del .pl desde cero."""
+    motor = MotorInferencia(ruta, ruta_alias=None)
+
+    def ids():
+        return [regla.id for regla in motor.listar_reglas_aprendidas()]
+
+    def diagnosticos(texto):
+        return [d.nombre for d in motor.consultar_texto(texto).diagnosticos]
+
+    if fase == "crear":
+        antes = diagnosticos(ORACION_PRUEBA)
+        motor.crear_regla(**REGLA_PRUEBA)
+        motor.aprender_alias(*ALIAS_PRUEBA)
+        despues = diagnosticos(ORACION_PRUEBA)
+        reporte = motor.analizar_caso(["apagados_repentinos", "olor_quemado"])
+        bloque = _bloque_del_archivo(ruta)
+        return {
+            "ok": "fuente_sobrecargada" not in antes
+            and "fuente_sobrecargada" in despues
+            and "R26" in reporte.explicaciones[0].reglas
+            and "regla_aprendida(fuente_sobrecargada" in bloque
+            and "alias_aprendido(apagados_repentinos" in bloque,
+            "diagnósticos antes": antes,
+            "diagnósticos después": despues,
+            "reglas de la explicación": reporte.explicaciones[0].reglas,
+        }
+    if fase == "verificar":
+        con_alias = diagnosticos("se muere el pc y huele a quemado")
+        excluido = diagnosticos("no enciende, se apaga de repente y huele a quemado")
+        return {
+            "ok": ids() == ["fuente_sobrecargada"]
+            and con_alias == ["fuente_sobrecargada"]
+            and "fuente_sobrecargada" not in excluido,
+            "reglas cargadas del .pl": ids(),
+            "con el alias aprendido": con_alias,
+            "con la condición excluyente (no_enciende)": excluido,
+        }
+    if fase == "eliminar":
+        eliminada = motor.eliminar_regla("fuente_sobrecargada")
+        alias_eliminado = motor.eliminar_alias_aprendido(ALIAS_PRUEBA[0])
+        bloque = _bloque_del_archivo(ruta)
+        return {
+            "ok": eliminada and alias_eliminado and not ids()
+            and "regla_aprendida" not in bloque and "alias_aprendido" not in bloque,
+            "reglas en memoria": ids(),
+        }
+    if fase == "verificar_eliminada":
+        despues = diagnosticos(ORACION_PRUEBA)
+        return {
+            "ok": not ids() and "fuente_sobrecargada" not in despues,
+            "reglas cargadas del .pl": ids(),
+            "diagnósticos": despues,
+        }
+    raise ValueError(f"Fase desconocida: {fase}")
+
+
 if __name__ == "__main__":
+    if len(sys.argv) == 4 and sys.argv[1] == "--fase":
+        print(json.dumps(ejecutar_fase(sys.argv[2], sys.argv[3]), ensure_ascii=False))
+        sys.exit(0)
     sys.exit(main())

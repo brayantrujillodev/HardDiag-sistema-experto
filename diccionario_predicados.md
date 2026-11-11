@@ -75,7 +75,7 @@ Archivo de Prolog: `base_conocimiento.pl` · Puente Python: `motor_inferencia.py
 
 Las sugerencias se generan a partir de síntomas asociados a componentes, las evidencias típicas de los diagnósticos y el catálogo vigente de pruebas, temperaturas, pitidos y antigüedad. Si un dato ya fue informado, Prolog no lo recomienda de nuevo. La prioridad favorece el dato compartido por varias hipótesis posibles.
 
-Los predicados auxiliares de estas funciones están en la sección F de `base_conocimiento.pl`. El número académico de reglas de inferencia sigue siendo R1–R25; los auxiliares de reporte no se cuentan como reglas de diagnóstico R26 en adelante.
+Los predicados auxiliares de estas funciones están en la sección F de `base_conocimiento.pl`. Las reglas de inferencia numeradas son R1–R26: R26 es la regla genérica que evalúa los diagnósticos aprendidos en caliente (parte H). Los auxiliares de reporte no se cuentan como reglas de diagnóstico.
 
 ## 5. Hechos principales (base)
 
@@ -92,4 +92,21 @@ Los predicados auxiliares de estas funciones están en la sección F de `base_co
 | `caso_ejemplo/2` | Ocho listas de condiciones listas para consultar con `consultar_caso/2`. |
 | `equipo/3`, `observado/2`, `medicion/3`, `pitidos/2`, `prueba/3` | Predicados dinámicos donde se cargan temporalmente los datos de cada consulta; no tienen hechos de ejemplo permanentes. |
 
-La base contiene exactamente **45 hechos**: 6 componentes, 19 síntomas, 9 hechos compactos de catálogo, 3 umbrales y 8 casos de ejemplo. Los accesores de catálogos son reglas auxiliares; las reglas de inferencia numeradas siguen siendo R1–R25.
+La base contiene exactamente **46 hechos**: 6 componentes, 19 síntomas, 10 hechos compactos de catálogo (incluido `catalogo_variables_discretas/1` del pre-procesamiento numérico), 3 umbrales y 8 casos de ejemplo. Los accesores de catálogos son reglas auxiliares; las reglas de inferencia numeradas son R1–R26. El léxico de la DCG (`vocabulario/2`), los alias base y el bloque de conocimiento aprendido no se cuentan entre esos hechos.
+
+## 6. Entregable 3: lenguaje natural y conocimiento aprendido
+
+| Firma | Parte | Descripción |
+| --- | --- | --- |
+| `tokenizar(+Texto, -Palabras)` | G.1 | Minúsculas, sin tildes ni signos; las comas quedan como el token `','`. |
+| `vocabulario(?Categoria, ?Palabras)`, `lexico/2` | G.2 | Léxico de la gramática (determinantes, conectores, verbos, sustantivos del dominio...). |
+| `alias_sintoma/2` | G.3 | Frases sinónimas base; incluye los `alias_aprendido/2` del experto. |
+| `oracion//1`, `sintagma//1`, `hecho_mas_largo//1` | G.4 | Gramática: secuencia de sintagmas; en cada posición gana la lectura más larga. |
+| `sintoma//1`, `temperatura//1`, `patron_pitidos//1`, `antiguedad//1`, `tipo_de_equipo//1`, `frase_alias//1` | G.4 | No terminales que producen los hechos simbólicos. |
+| `parsear_oracion(+Texto, -Hechos, -NoReconocidas)` | G.5 | Interfaz de la DCG; `parsear_oracion_texto/3` devuelve los hechos como átomos para Python. |
+| `regla_aprendida/8` (dinámico) | H | `regla_aprendida(Id, Nombre, Componente, Requeridas, Excluyentes, Certeza, Gravedad, Accion)`. |
+| `diagnostico/3` (R26) | B | Evalúa cada regla aprendida con `cumple_condiciones/2` y `condicion_caso/2`. |
+| `validar_regla/8`, `aprender_regla/8`, `olvidar_regla/1` | H | Validación, `assertz/1` y `retract/1` de reglas aprendidas. |
+| `agregar_alias/2`, `olvidar_alias/2`, `listar_aliases_aprendidos/1` | H | Alias aprendidos (`alias_aprendido/2`, dinámico). |
+| `listar_reglas_aprendidas/1`, `contenido_aprendido/1` | H | Listado para Python y texto del bloque persistido (`portray_clause/1`). |
+| `catalogo_variables_discretas/1`, `nivel_discreto/2`, `discreto/3` | A.15, C | Niveles `dato(Variable, Nivel)` del pre-procesamiento numérico; R3b, R6b, R7b y R8b los usan. |

@@ -8,3 +8,5 @@ venv/
 .DS_Store
 Thumbs.db
 *.log
+.base_conocimiento-*.tmp
+aliases_aprendidos.json.migrado

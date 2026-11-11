@@ -35,10 +35,10 @@ py -m pip install -r requirements.txt
 La instalación directa equivalente solicitada es:
 
 ```powershell
-py -m pip install pyswip streamlit
+py -m pip install pyswip streamlit scikit-learn
 ```
 
-`requirements.txt` declara PySwip y Streamlit para repetir la instalación del proyecto. No se necesita Node.js.
+`requirements.txt` declara PySwip, Streamlit y scikit-learn (este último solo para el pre-procesamiento numérico opcional; sin él se usa una heurística por umbrales). No se necesita Node.js.
 
 ## Ejecutar la interfaz Streamlit
 
@@ -58,54 +58,141 @@ La interfaz utiliza un tema oscuro con acentos luminosos. Para detener la aplica
 
 ## Uso
 
-1. Empieza en **«¿Qué le sucede al computador?»**: selecciona síntomas o escribe libremente una descripción en el campo multilínea (por ejemplo: "no prende", "pantalla negra", "la pantalla parpadea y se apaga jugando"). El sistema intenta asociar el texto con síntomas conocidos. Si no reconoce una frase, la conserva y avisa que todavía no puede inferir un diagnóstico a partir de ella; un experto puede enseñarle una asociación. Si indicas lentitud, aparece una guía para precisar si tarda al iniciar, se congela o el disco hace clic.
-2. También puedes ingresar identificadores adicionales separados por coma; Python comprueba que existan en el catálogo antes de enviarlos.
-3. En **«Datos que pueden afinar el resultado»** puedes abrir las secciones opcionales para agregar temperatura, antigüedad, pitidos o pruebas. No es necesario completar estos datos para analizar.
-4. Si necesitas gestionar el vocabulario, pulsa **«Ir al modo experto»**. Allí puedes agregar frases personalizadas, consultar las existentes y eliminar las que ya no uses. **«Volver al diagnóstico normal»** retorna al formulario.
+1. Empieza en **«¿Qué le sucede al computador?»**: selecciona síntomas o escribe libremente una descripción en el campo multilínea (por ejemplo: "no prende", "pantalla negra", "la pantalla parpadea y se apaga jugando"). La gramática DCG de Prolog analiza la oración y la interfaz muestra los hechos que extrajo y las palabras que no reconoció. Si no encuentra síntomas, avisa que no puede inferir un diagnóstico; un experto puede enseñarle la frase. Si indicas lentitud, aparece una guía para precisar si tarda al iniciar, se congela o el disco hace clic.
+2. La DCG también reconoce temperaturas (*la cpu está a 95 grados*), patrones de pitidos (*un pitido largo y dos cortos*) y la antigüedad del equipo (*mi portátil de 7 años*).
+3. En **«Datos que pueden afinar el resultado»** puedes abrir las secciones opcionales para agregar temperatura, antigüedad, pitidos, pruebas o lecturas numéricas (horas de uso, ocupación del disco) que discretiza el clasificador. No es necesario completar estos datos para analizar.
+4. Para crear diagnósticos o enseñar vocabulario, pulsa **«Ir al modo experto»** e inicia sesión con el rol Experto (ver la sección del Entregable 3). **«Volver al diagnóstico normal»** retorna al formulario.
 5. Puedes registrar la marca del computador; se muestra como dato informativo y no modifica las reglas de diagnóstico.
 6. Deja marcada **«No he realizado pruebas»** si corresponde. Si desmarcas esa opción, selecciona las pruebas realizadas y su resultado. Las pruebas sin resultado no se envían como evidencia.
 7. Pulsa **«Analizar mi computador»** y revisa las hipótesis, la evidencia y las recomendaciones.
 
 ### Modos de uso
 
-- **Normal:** formulario de síntomas, descripción libre, datos opcionales y resultados del diagnóstico. No muestra herramientas de administración del conocimiento.
-- **Experto:** se abre con el botón **«Ir al modo experto»**. Permite agregar, consultar y eliminar alias persistentes vinculados a los síntomas conocidos. Usa **«Volver al diagnóstico normal»** para salir.
+- **Normal:** formulario de síntomas, descripción libre (analizada por la DCG de Prolog), datos opcionales, lecturas numéricas y resultados del diagnóstico. No muestra herramientas de administración del conocimiento.
+- **Experto:** se abre con **«Ir al modo experto»** y exige iniciar sesión con un usuario de rol **Experto**. Permite crear diagnósticos nuevos en caliente, listarlos y eliminarlos, y administrar frases (alias) de la gramática. Todo cambio se inyecta con `assertz/1` y se escribe en `base_conocimiento.pl`. Usa **«Cerrar sesión»** o **«Volver al diagnóstico normal»** para salir.
 
-El modo experto administra las frases reconocidas, no crea diagnósticos ni reglas Prolog nuevas.
+La interfaz, los resultados y las explicaciones se presentan en español. El resultado contiene los diagnósticos calculados por Prolog (nivel de daño según el tipo de falla, certeza, severidad, prioridad y evidencia), una solución recomendada y pasos orientativos para cada daño reconocido. El nivel de daño se clasifica como leve, moderado o grave a partir de la gravedad base de cada diagnóstico; la severidad puede aumentar por los factores de riesgo del caso. Si faltan datos, muestra componentes sospechosos y el panel **«¿Qué falta?»** con pruebas o datos priorizados por las hipótesis compatibles. Abre **«Ver explicación del diagnóstico»** para ver las reglas comprobadas, los hechos del caso, las negaciones por fallo y las alternativas descartadas mediante pruebas. Las guías son educativas; si no tienes experiencia en reparaciones internas, consulta a un técnico.
 
-## Entrega 3: procesamiento del lenguaje natural y aprendizaje dinámico
+## Entregable 3: lenguaje natural (DCG) y aprendizaje dinámico en caliente
 
-Este proyecto incluye la funcionalidad solicitada para la entrega académica de procesamiento del lenguaje natural, con integración de DCG y aprendizaje dinámico en cliente:
+### 1. Entrada en lenguaje natural con una DCG
 
-- Conversión de frases naturales y sus variantes comunes a síntomas del dominio, con integración del parser y el catálogo Prolog.
-- Mapeo de alias aprendidos por el usuario experto: por ejemplo, si se define que "se ven rayas" equivale a `lineas_en_pantalla`, el sistema lo guardará para futuras consultas.
-- El campo acepta cualquier descripción; solo se generan diagnósticos a partir de síntomas que el sistema conoce. El texto no reconocido se indica al usuario en vez de inventar una causa.
-- Compatibilidad con la entrada formal anterior del proyecto (identificadores tipo `no_enciende`, `pitidos(tres_cortos)`, `temp_cpu(97)` y pruebas como `prueba(fuente_con_probador, falla)`).
-
-La interfaz, los resultados y las explicaciones se presentan en español. El resultado contiene los diagnósticos calculados por Prolog (nivel de daño según el tipo de falla, certeza, severidad, prioridad y evidencia), una solución recomendada y pasos orientativos para cada daño reconocido. El nivel de daño se clasifica como leve, moderado o grave a partir de la gravedad base de cada diagnóstico; la severidad puede aumentar por los factores de riesgo del caso. Si faltan datos, muestra componentes sospechosos y el panel **«¿Qué falta?»** con pruebas o datos priorizados por las hipótesis compatibles. Abre **«¿Por qué?»** para ver las reglas comprobadas, los hechos del caso, las negaciones por fallo y las alternativas descartadas mediante pruebas. Las guías son educativas; si no tienes experiencia en reparaciones internas, consulta a un técnico.
-
-Los ejemplos de identificadores de síntomas incluyen:
+El texto libre ya no se interpreta en Python. `motor_inferencia.py` envía la oración tal cual a Prolog mediante PySwip y Prolog responde con los hechos simbólicos:
 
 ```text
-no_enciende
-pantalla_negra
-ventiladores_giran
-pantalla_azul
-olor_quemado
+Python  ──parsear_oracion_texto('mi pc no prende y huele a quemado', H, N)──▶  Prolog
+Python  ◀──────────── H = [no_enciende, olor_quemado], N = [] ──────────────  Prolog
 ```
 
-En el campo de descripción puedes escribir frases normales; el sistema intenta relacionarlas con los síntomas que conoce.
+La parte G de `base_conocimiento.pl` contiene la gramática:
+
+1. `tokenizar/2` pasa el texto a minúsculas, quita tildes y signos y lo divide en palabras (las comas se conservan como separador).
+2. `oracion//1` analiza la lista de palabras con `phrase/2`. Una oración es una secuencia de **sintagmas** unidos por **conectores** (`y`, `e`, `ni`, `pero`, `además`, `,`...) y acompañados de palabras de **relleno** (artículos, preposiciones, "mi computador", "presenta"...).
+3. Cada sintagma lo reconoce un no terminal con su propio léxico (`vocabulario/2`): `sintoma//1` (los 19 síntomas del catálogo y sus variantes: *la pantalla se pone azul*, *el disco duro hace ruido*, *no detecta el disco*...), `temperatura//1` (*la cpu está a 95 grados*, *97 °C*), `patron_pitidos//1` (*un pitido largo y dos cortos*), `antiguedad//1` y `tipo_de_equipo//1` (*mi portátil de 7 años*), `frase_alias//1` (alias base y aprendidos) e `identificador_sintoma//1` (`pantalla_azul`).
+4. `hecho_mas_largo//1` elige, en cada posición, la lectura que consume más palabras (*tres pitidos cortos* gana a *tres pitidos*).
+5. Las palabras que no pertenecen al léxico se devuelven en `NoReconocidas`; la interfaz las muestra para que el experto pueda enseñarlas.
+
+Ejemplos (todos verificados en `pruebas.py`):
+
+| Oración | Hechos extraídos por la DCG |
+| --- | --- |
+| mi computador no enciende y huele a quemado | `no_enciende`, `olor_quemado` |
+| La pantalla se pone azul, se reinicia sola y el disco hace clic | `pantalla_azul`, `reinicios_aleatorios`, `ruido_clic` |
+| el pc va lento y la cpu está a 95 grados | `lentitud`, `temp_cpu(95)` |
+| Al encender hace tres pitidos cortos y la pantalla queda en negro | `pitidos(tres_cortos)`, `pantalla_negra` |
+| mi portátil de 7 años pierde la fecha y hora | `hora_incorrecta`, `equipo(portatil,7)` |
+| tarda mucho en iniciar y el disco duro hace ruido | `arranque_lento`, `ruido_clic` |
+
+Desde la consola de SWI-Prolog:
+
+```prolog
+?- parsear_oracion('el pc va lento y la cpu esta a 95 grados', Hechos, NoRec).
+Hechos = [lentitud, temp_cpu(95)], NoRec = [].
+
+?- consultar_texto('mi pc no prende y huele a quemado', Respuesta).
+```
+
+La entrada formal anterior (`no_enciende, pitidos(tres_cortos), temp_cpu(97), prueba(...)`) sigue funcionando; si se mezclan, los elementos formales se envían tal cual y las frases pasan por la DCG.
+
+### 2. Modo Experto con rol y adquisición de conocimiento
+
+**Inicio de sesión.** Las credenciales viven en `config_experto.json` como hash PBKDF2-SHA256 con sal (nunca en texto plano). La configuración entregada trae el usuario `experto` con la contraseña de demostración `HardDiag2026`; cámbiala antes de publicar el proyecto:
+
+```powershell
+py autenticacion.py --configurar
+```
+
+También se pueden definir las variables de entorno `HARDDIAG_EXPERTO_USUARIO` y `HARDDIAG_EXPERTO_HASH` (el hash con el mismo formato), que tienen prioridad sobre el archivo.
+
+**Crear un diagnóstico nuevo** (pestaña «Nuevo diagnóstico»): nombre legible, identificador Prolog (se propone a partir del nombre), componente, síntomas requeridos, condiciones adicionales (pitidos, resultado de pruebas, temperatura alta, equipo antiguo), condiciones que lo excluyen, certeza, gravedad y acción recomendada. Al guardar:
+
+1. Prolog valida la regla con `validar_regla/8` (identificador nuevo, componente y condiciones existentes, al menos un síntoma, nada a la vez requerido y excluyente).
+2. Python la inyecta en memoria con `assertz/1` vía PySwip: `regla_aprendida(Id, Nombre, Componente, Requeridas, Excluyentes, Certeza, Gravedad, Accion)`.
+3. Python reescribe el bloque final de `base_conocimiento.pl` con el texto que genera Prolog (`contenido_aprendido/1`, con `portray_clause/1`). La escritura es atómica (archivo temporal + reemplazo); si falla, la regla se retira de la memoria.
+
+El bloque persistido queda así (incluye como comentario la regla lógica equivalente):
+
+```prolog
+%% === INICIO CONOCIMIENTO APRENDIDO (no editar a mano) ===
+alias_aprendido(apagados_repentinos, 'se muere el pc').
+
+% R26 aprendida: Fuente de poder sobrecargada
+%   diagnostico(E, fuente_sobrecargada, media) :-
+%       observado(E, apagados_repentinos),
+%       observado(E, olor_quemado),
+%       \+ observado(E, no_enciende),
+%       \+ descartado(E, fuente_sobrecargada).
+regla_aprendida(fuente_sobrecargada, 'Fuente de poder sobrecargada', fuente_poder, [apagados_repentinos, olor_quemado], [no_enciende], media, alta, 'Revisar el consumo del equipo e instalar una fuente de mayor potencia.').
+%% === FIN CONOCIMIENTO APRENDIDO ===
+```
+
+**Integración con el motor.** La regla genérica **R26** (`diagnostico/3`) evalúa cada `regla_aprendida/8`. Además `gravedad/2`, `accion/2`, `evidencia_tipica/2`, `componente_diagnostico/2`, `traza_diagnostico/3`, `negacion_traza/4` y `dato_recomendado/5` tienen una cláusula para las reglas aprendidas, de modo que el diagnóstico nuevo aparece en los resultados, en la explicación (regla R26, hechos y exclusiones) y en las sugerencias de datos faltantes, igual que los originales.
+
+La pestaña «Reglas aprendidas» lista y elimina reglas (`retract/1` y reescritura del bloque) y muestra el bloque tal como está en el archivo. La pestaña «Vocabulario» enseña frases nuevas (`alias_aprendido/2`) que la DCG reconoce dentro de cualquier oración. Si existe un `aliases_aprendidos.json` de la versión anterior, sus alias se migran al `.pl` al iniciar y el JSON se renombra a `aliases_aprendidos.json.migrado`.
+
+### 3. (Opcional híbrido) Pre-procesamiento numérico
+
+`preprocesamiento.py` entrena un `DecisionTreeClassifier` de scikit-learn por variable con el dataset sintético `datos_preprocesamiento.csv` (regenerable con `py preprocesamiento.py --generar`) y convierte lecturas continuas en hechos discretos `dato(Variable, Nivel)` antes de enviarlos a Prolog. Si scikit-learn no está instalado, usa una heurística por umbrales con las mismas etiquetas.
+
+| Variable | Niveles |
+| --- | --- |
+| Temperatura del procesador (°C) | normal (<70), elevada (70–85), alta (86–94), crítica (≥95) |
+| Antigüedad (años) | nuevo (<2), medio (2–4), antiguo (≥5) |
+| Horas de uso diario | bajo (<4), moderado (4–9), intensivo (≥10) |
+| Ocupación del disco (%) | normal (<75), alto (75–89), crítico (≥90) |
+
+Prolog los usa en R3b (sobrecalentamiento), R7b (equipo antiguo), R8b (factor de riesgo) y R6b (indicios sobre componentes). En la interfaz están en «Lecturas numéricas (clasificador ligero)»; el clasificador también recibe la temperatura y la antigüedad que extrajo la DCG.
+
+### 4. Guion para el video de persistencia
+
+1. Abre una terminal en la carpeta del proyecto y muestra que el bloque está vacío:
+   `Select-String -Path base_conocimiento.pl -Pattern "CONOCIMIENTO APRENDIDO" -Context 0,3`
+2. Inicia la aplicación: `py -m streamlit run main.py`.
+3. En el modo normal escribe *«se apaga de repente y huele a quemado»* y pulsa **Analizar**. Muestra los hechos que extrajo la DCG y que no hay un diagnóstico confirmado.
+4. Pulsa **Ir al modo experto**, intenta entrar con una contraseña incorrecta (se rechaza) y luego entra con `experto` / tu contraseña.
+5. En «Nuevo diagnóstico» crea *Fuente de poder sobrecargada*: componente fuente de poder; síntomas requeridos «El equipo se apaga de repente» y «Hay olor a quemado»; excluyente «El equipo no enciende»; certeza media; gravedad alta; una acción. Pulsa **Inyectar regla y guardarla en el .pl**.
+6. Abre «Reglas aprendidas» → «Ver el bloque persistido en base_conocimiento.pl» y muestra la regla escrita. Opcional: en «Vocabulario» enseña *«se muere el pc»* → «El equipo se apaga de repente».
+7. Vuelve al modo normal, repite la oración del paso 3 y muestra que ahora aparece **Fuente de poder sobrecargada**, con la regla R26 en la explicación.
+8. **Reinicia:** cierra la app con Ctrl+C en la terminal y vuelve a ejecutar `py -m streamlit run main.py`. Recarga el navegador.
+9. Sin entrar al modo experto, escribe *«se muere el pc y huele a quemado»* y analiza: el diagnóstico aprendido sigue funcionando, porque se cargó desde el `.pl`.
+10. Muestra el archivo `base_conocimiento.pl` en VS Code (final del archivo) y, si quieres, prueba en `swipl`: `?- consult('base_conocimiento.pl'), listar_reglas_aprendidas(L).`
+11. Para dejar la base limpia, elimina la regla desde «Reglas aprendidas».
+
+Para ensayar sin tocar la base real puedes apuntar la app a una copia: `$env:HARDDIAG_BASE_CONOCIMIENTO = "C:\ruta\copia.pl"; py -m streamlit run main.py`.
 
 ## ¿Qué contiene el proyecto?
 
 | Archivo | Descripción |
 | --- | --- |
-| `base_conocimiento.pl` | Base Prolog con hechos, reglas R1–R25, diagnóstico, trazas, sugerencias y nuevas reglas para alias y procesamiento de lenguaje natural. |
-| `motor_inferencia.py` | Adaptador PySwip: carga Prolog, normaliza entradas, interpreta texto libre, aplica y persiste alias dinámicos y convierte respuestas, explicaciones y sugerencias. |
-| `main.py` | Interfaz Streamlit con vistas separadas para diagnóstico normal y administración del modo experto. |
-| `aliases_aprendidos.json` | Archivo creado automáticamente para conservar los alias personalizados del modo experto. |
-| `main_consola.py` | Conserva la interfaz interactiva original por consola. |
-| `pruebas.py` | Casos del motor y verificaciones del sistema experto, incluidas pruebas de integración y compatibilidad. |
+| `base_conocimiento.pl` | Base Prolog: hechos, reglas R1–R26, diagnóstico, trazas y sugerencias (partes A–F), DCG de lenguaje natural (parte G), adquisición de conocimiento (parte H) y el bloque de conocimiento aprendido. |
+| `motor_inferencia.py` | Adaptador PySwip: carga Prolog, envía oraciones a la DCG, inyecta reglas y alias con `assertz/1`, los persiste en el `.pl` y convierte respuestas, explicaciones y sugerencias. |
+| `main.py` | Interfaz Streamlit: diagnóstico normal, inicio de sesión y panel del modo experto. |
+| `autenticacion.py` | Verificación del rol Experto con hashes PBKDF2 y comando `--configurar`. |
+| `config_experto.json` | Usuario experto y hash de su contraseña. |
+| `preprocesamiento.py` | Clasificador ligero (scikit-learn) que discretiza lecturas numéricas. |
+| `datos_preprocesamiento.csv` | Dataset sintético con el que se entrena el clasificador. |
+| `main_consola.py` | Interfaz interactiva original por consola (acepta oraciones libres). |
+| `pruebas.py` | Casos del motor, integración, DCG y persistencia de reglas aprendidas. |
 | `evidencia_pruebas.txt` | Salida guardada por `pruebas.py`. |
 | `requirements.txt` | Dependencias Python del proyecto. |
 | `web_app.py`, `index.html` | Interfaz web HTTP anterior; se conserva como alternativa, pero el entregable principal es la interfaz Streamlit. |
@@ -115,24 +202,23 @@ En el campo de descripción puedes escribir frases normales; el sistema intenta 
 ## Arquitectura
 
 ```text
-Formulario Streamlit (main.py)
-        ↓ texto libre / entrada formal / modo experto
-Adaptador PySwip (motor_inferencia.py)
-        ↓ normalización, alias dinámicos y parseo de lenguaje natural
+Formulario Streamlit (main.py) ── login de experto (autenticacion.py)
+        ↓ oración libre / entrada formal / lecturas numéricas / reglas nuevas
+Adaptador PySwip (motor_inferencia.py) ── preprocesamiento.py (dato/2)
+        ↓ parsear_oracion_texto/3 · analizar_caso/2 · assertz/1 · retract/1
 Base SWI-Prolog (base_conocimiento.pl)
-        ↓ diagnóstico, traza, exclusiones, sugerencias y DCG
+        ↓ DCG, diagnóstico (R1–R26), traza, exclusiones, sugerencias
+        ↓ bloque de conocimiento aprendido (persistencia)
 Presentación en Streamlit
 ```
 
-La inferencia, la explicación de las reglas y la priorización de datos faltantes se realizan en Prolog. Python se ocupa de la interfaz, la validación básica del formulario, la interpretación del lenguaje natural, el aprendizaje dinámico de aliases y la presentación de la respuesta.
+La inferencia, el análisis sintáctico del lenguaje natural, la validación de reglas nuevas, la explicación y la priorización de datos faltantes se realizan en Prolog. Python se ocupa de la interfaz, del control de acceso, de la discretización numérica y de escribir en el archivo el texto que Prolog genera.
 
 ## Base de conocimiento: hechos y reglas
 
-La base mantiene los hechos del dominio, los catálogos de síntomas y pruebas, y las reglas de inferencia responsables del diagnóstico. Además, incluye el soporte para la entrega 3 con alias dinámicos y un parser mínimo de lenguaje natural mediante DCG.
-
 Los catálogos relacionados están almacenados como hechos compactos para consultar información de componentes, pruebas, resultados, umbrales, diagnósticos y acciones recomendadas. La traza informa reglas solo cuando la ruta Prolog correspondiente tuvo éxito. El panel de información faltante se basa en catálogos, evidencias típicas y pruebas que existen en la propia base.
 
-Los componentes cubiertos son fuente de poder, placa base, procesador/refrigeración, memoria RAM, almacenamiento y tarjeta gráfica/video. Los diagnósticos incluyen fallas de fuente, video, placa base, refrigeración, RAM, disco y batería CMOS.
+Los componentes cubiertos son fuente de poder, placa base, procesador/refrigeración, memoria RAM, almacenamiento y tarjeta gráfica/video. Los diagnósticos incluyen fallas de fuente, video, placa base, refrigeración, RAM, disco y batería CMOS, más los que el experto agregue en caliente.
 
 ## Ejecutar pruebas
 
@@ -140,16 +226,14 @@ Los componentes cubiertos son fuente de poder, placa base, procesador/refrigerac
 py pruebas.py
 ```
 
-El script ejecuta once casos base y siete comprobaciones de integración:
+El script ejecuta 34 verificaciones y guarda la salida en `evidencia_pruebas.txt`:
 
-1. Diagnóstico suficiente con explicación de reglas y hechos.
-2. Síntomas insuficientes.
-3. Más de una hipótesis compatible.
-4. Recomendación de datos/prueba faltante.
-5. Entrada válida sin diagnóstico final.
-6. Reconocimiento de descripciones naturales adicionales.
+- 11 casos base del motor (diagnóstico, exclusiones, bordes).
+- 9 comprobaciones de integración: explicación, datos insuficientes, varias hipótesis, sugerencias, entrada sin diagnóstico, inventario, descripción natural, **oración completa → DCG → diagnóstico** y **preprocesamiento → `dato/2` → R3b**.
+- 10 oraciones en español analizadas por la DCG.
+- 4 fases de persistencia sobre una **copia temporal** de `base_conocimiento.pl`; cada fase corre en un proceso de Python nuevo (equivale a reiniciar la app): crear la regla y un alias, verificar tras el reinicio que siguen en el `.pl` y diagnostican (y que la condición excluyente funciona), eliminarlos y verificar tras otro reinicio que ya no existen.
 
-El comando debe terminar con código 0 e informar todas las verificaciones aprobadas. También actualiza `evidencia_pruebas.txt`.
+El comando debe terminar con código 0 e informar todas las verificaciones aprobadas.
 
 ## Ejecutar la consola original
 
@@ -158,17 +242,6 @@ La consola anterior se conserva en:
 ```powershell
 py main_consola.py
 ```
-
-## Modo experto y aprendizaje dinámico
-
-El modo experto del proyecto permite que el usuario registre frases comunes que luego se convertirán automáticamente en síntomas del dominio. Por ejemplo:
-
-```text
-Frase: "pantalla con rayas"
-Se guarda como alias de: lineas_en_pantalla
-```
-
-Esto hace que el sistema aprenda dinámicamente variantes del lenguaje natural sin alterar la lógica de inferencia ni la validación del catálogo. La relación se conserva para futuras consultas en la misma sesión y puede reutilizarse en nuevas entradas.
 
 ## Solución de problemas
 
