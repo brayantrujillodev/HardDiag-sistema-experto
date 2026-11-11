@@ -19,6 +19,9 @@ from motor_inferencia import (
 )
 from preprocesamiento import VARIABLES, Preprocesador
 
+RUTA_LOGO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logohardiag.jpeg")
+
+
 @st.cache_resource
 def obtener_motor() -> MotorInferencia:
     """Mantiene una única instancia del motor Prolog entre recargas de Streamlit.
@@ -815,7 +818,7 @@ def main() -> None:
     st.session_state.setdefault("harddiag_modo", "normal")
     st.set_page_config(
         page_title="HardDiag | Diagnóstico de hardware",
-        page_icon="🖥️",
+        page_icon=RUTA_LOGO if os.path.isfile(RUTA_LOGO) else "🖥️",
         layout="wide",
     )
     hero = """
@@ -1053,6 +1056,8 @@ def main() -> None:
             "            </div>",
             "",
         )
+    if os.path.isfile(RUTA_LOGO):
+        st.image(RUTA_LOGO, width=150)
     st.markdown(hero, unsafe_allow_html=True)
     if st.session_state["harddiag_modo"] == "experto":
         st.write("Panel exclusivo del rol Experto; el diagnóstico normal queda en una vista separada.")

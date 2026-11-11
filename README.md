@@ -1,6 +1,20 @@
+<p align="center"><img src="logohardiag.jpeg" alt="Logo de HardDiag" width="220"></p>
+
 # HardDiag
 
 Sistema experto universitario para orientar el diagnóstico de fallas de hardware en computadores. La interfaz Streamlit recibe y valida los datos; el motor SWI-Prolog aplica las reglas, explica las conclusiones y recomienda la información adicional que ayudaría a distinguir hipótesis.
+
+## Clonar y ejecutar en otro PC
+
+```powershell
+git clone https://github.com/brayantrujillodev/HardDiag-sistema-experto.git
+cd HardDiag-sistema-experto
+py -m pip install -r requirements.txt
+py pruebas.py
+py -m streamlit run main.py
+```
+
+Antes hay que instalar Python 3.10+ y SWI-Prolog de 64 bits (ver «Instalación»). Usuario del modo experto: `experto`, contraseña de demostración `HardDiag2026` (cámbiala con `py autenticacion.py --configurar`).
 
 > HardDiag es un proyecto educativo, no sustituye una revisión profesional. Si hay olor a quemado, apaga y desconecta el computador. No abras la fuente de poder.
 
