@@ -62,6 +62,14 @@ class Diagnostico:
 
 
 @dataclass
+class Contradiccion:
+    """Incoherencia que detectó la parte I de Prolog entre los hechos del caso."""
+    tipo: str
+    elementos: str
+    motivo: str
+
+
+@dataclass
 class Respuesta:
     """Respuesta completa de ``consultar_caso/2``."""
     estado: str
@@ -72,6 +80,7 @@ class Respuesta:
     sugerencias: list[Sugerencia] = field(default_factory=list)
     hechos_dcg: list[str] = field(default_factory=list)
     no_reconocidas: list[str] = field(default_factory=list)
+    contradicciones: list[Contradiccion] = field(default_factory=list)
 
 
 @dataclass
@@ -260,13 +269,28 @@ class MotorInferencia:
         texto_norm = re.sub(r"[^a-z0-9\s]+", " ", texto_norm)
         return re.sub(r"\s+", " ", texto_norm).strip()
 
+    def verificar_consistencia(self, items: Iterable[str]) -> list[Contradiccion]:
+        """Invoca ``contradicciones_caso(+Entrada, -Contradicciones)`` (parte I).
+
+        Devuelve una lista vacía si los hechos son coherentes. Las reglas de
+        incompatibilidad viven en Prolog; aquí solo se convierten en objetos.
+        """
+        consulta = f"contradicciones_caso({self._lista_prolog(items)}, C)"
+        return [Contradiccion(str(c[0]), str(c[1]), str(c[2]))
+                for c in self._una_solucion(consulta)["C"]]
+
     def consultar_lista(self, items: Iterable[str]) -> Respuesta:
         """Invoca ``consultar_caso(+Entrada, -Respuesta)`` con una lista."""
+        items = list(items)
         consulta = f"consultar_caso({self._lista_prolog(items)}, R)"
-        return self._a_respuesta(self._una_solucion(consulta)["R"])
+        respuesta = self._a_respuesta(self._una_solucion(consulta)["R"])
+        if respuesta.estado == "entrada_contradictoria":
+            respuesta.contradicciones = self.verificar_consistencia(items)
+        return respuesta
 
     def analizar_caso(self, items: Iterable[str]) -> Respuesta:
         """Consulta el diagnóstico, la traza y datos faltantes en Prolog."""
+        items = list(items)
         consulta = f"analizar_caso({self._lista_prolog(items)}, R)"
         crudo = self._una_solucion(consulta)["R"]
         estado, diagnosticos, sospechosos, descartados, explicaciones, sugerencias = crudo
@@ -297,6 +321,8 @@ class MotorInferencia:
             )
             for item in sugerencias
         ]
+        if respuesta.estado == "entrada_contradictoria":
+            respuesta.contradicciones = self.verificar_consistencia(items)
         return respuesta
 
     def diagnosticar_todos(self, items: Iterable[str]) -> tuple[str, list[Diagnostico]]:
@@ -612,6 +638,7 @@ _MENSAJES_ESTADO = {
     "datos_insuficientes": "Datos insuficientes: ninguna regla se cumple con la información dada.",
     "entrada_vacia": "No se ingresó ninguna condición.",
     "entrada_invalida": "Ninguna condición válida en la entrada.",
+    "entrada_contradictoria": "Hechos incompatibles: no se emite diagnóstico.",
 }
 
 
@@ -625,6 +652,10 @@ def formatear_respuesta(resp: Respuesta) -> str:
     if resp.descartados:
         lineas.append("Condiciones no reconocidas (ignoradas): "
                       + ", ".join(resp.descartados))
+    if resp.contradicciones:
+        lineas.append("Contradicciones detectadas (corrige los datos y vuelve a consultar):")
+        for c in resp.contradicciones:
+            lineas.append(f"  - [{c.tipo}] {c.elementos}: {c.motivo}")
     if resp.diagnosticos:
         lineas.append("Diagnósticos (de mayor a menor prioridad):")
         for i, d in enumerate(resp.diagnosticos, start=1):

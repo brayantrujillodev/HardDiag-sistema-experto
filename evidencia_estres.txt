@@ -1,0 +1,190 @@
+
+=== PRUEBAS DE ESTRÉS - HARDDIAG (Entregable 4) ===
+
+--- A. Contradicciones que deben bloquearse ---
+[OK  ] a01 No enciende y los ventiladores giran
+        entrada : [no_enciende,ventiladores_giran]
+        esperado: sintomas_incompatibles | obtenido: sintomas_incompatibles
+[OK  ] a02 No enciende y aparece pantalla azul
+        entrada : [no_enciende,pantalla_azul]
+        esperado: sintomas_incompatibles | obtenido: sintomas_incompatibles
+[OK  ] a03 No enciende pero el disco hace clics
+        entrada : [no_enciende,ruido_clic]
+        esperado: sintomas_incompatibles | obtenido: sintomas_incompatibles
+[OK  ] a04 Pantalla negra y pantalla azul
+        entrada : [pantalla_negra,pantalla_azul]
+        esperado: sintomas_incompatibles | obtenido: sintomas_incompatibles
+[OK  ] a05 Ventilador detenido y ventilador ruidoso
+        entrada : [ventilador_detenido,ventilador_ruidoso]
+        esperado: sintomas_incompatibles | obtenido: sintomas_incompatibles
+[OK  ] a06 Ventilador detenido y ventiladores girando
+        entrada : [ventilador_detenido,ventiladores_giran]
+        esperado: sintomas_incompatibles | obtenido: sintomas_incompatibles
+[OK  ] a07 Disco no detectado pero con prueba SMART
+        entrada : [disco_no_encontrado,prueba(smart_disco,ok)]
+        esperado: sintomas_incompatibles | obtenido: sintomas_incompatibles
+[OK  ] a08 Olor a quemado reportado y negado
+        entrada : [olor_quemado,ausente(olor_quemado)]
+        esperado: afirmado_y_negado | obtenido: afirmado_y_negado
+[OK  ] a09 No enciende y "sí enciende"
+        entrada : [no_enciende,ausente(no_enciende)]
+        esperado: afirmado_y_negado | obtenido: afirmado_y_negado
+[OK  ] a10 CPU a 500 grados (imposible)
+        entrada : [temp_cpu(500)]
+        esperado: lectura_imposible | obtenido: lectura_imposible
+[OK  ] a11 CPU a 3 grados en un equipo funcionando
+        entrada : [temp_cpu(3),ventilador_ruidoso]
+        esperado: lectura_imposible | obtenido: lectura_imposible
+[OK  ] a12 Dos lecturas de temperatura muy distintas
+        entrada : [temp_cpu(40),temp_cpu(99)]
+        esperado: lecturas_discrepantes | obtenido: lecturas_discrepantes
+[OK  ] a13 97 °C pero nivel discreto "normal"
+        entrada : [temp_cpu(97),dato(temperatura_cpu,normal)]
+        esperado: nivel_discordante | obtenido: nivel_discordante
+[OK  ] a14 30 °C pero nivel discreto "critica"
+        entrada : [temp_cpu(30),dato(temperatura_cpu,critica)]
+        esperado: nivel_discordante | obtenido: nivel_discordante
+[OK  ] a15 Equipo de 9 años con nivel "nuevo"
+        entrada : [equipo(portatil,9),dato(antiguedad,nuevo)]
+        esperado: nivel_discordante | obtenido: nivel_discordante
+[OK  ] a16 Misma prueba con resultados opuestos
+        entrada : [prueba(cambio_cable,ok),prueba(cambio_cable,falla)]
+        esperado: datos_duplicados | obtenido: datos_duplicados
+[OK  ] a17 Dos patrones de pitidos distintos
+        entrada : [pitidos(tres_cortos),pitidos(cortos_repetidos)]
+        esperado: datos_duplicados | obtenido: datos_duplicados
+[OK  ] a18 Dos equipos distintos
+        entrada : [equipo(portatil,2),equipo(escritorio,9)]
+        esperado: datos_duplicados | obtenido: datos_duplicados
+[OK  ] a19 Dos niveles para la misma variable
+        entrada : [dato(uso_disco,normal),dato(uso_disco,critico)]
+        esperado: datos_duplicados | obtenido: datos_duplicados
+[OK  ] a20 Contradicción escondida entre muchos hechos válidos
+        entrada : [olor_quemado,hora_incorrecta,equipo(escritorio,7),prueba(reasentar_ram,resuelve),lentitud,no_enciende,prueba(fuente_con_probador,ok)]
+        esperado: sintomas_incompatibles | obtenido: sintomas_incompatibles
+
+--- B. Combinaciones coherentes (no deben bloquearse) ---
+[OK  ] b01 No enciende con LED de reserva
+        entrada : [no_enciende,led_encendido]
+        esperado: datos_insuficientes | obtenido: datos_insuficientes
+[OK  ] b02 No enciende, olor a quemado y fuente defectuosa
+        entrada : [no_enciende,olor_quemado,prueba(fuente_con_probador,falla)]
+        esperado: ok | obtenido: ok
+[OK  ] b03 No enciende y pitidos de la BIOS (placa base)
+        entrada : [no_enciende,prueba(fuente_con_probador,ok),pitidos(un_largo_tres_cortos)]
+        esperado: ok | obtenido: ok
+[OK  ] b04 Pantalla negra con ventiladores girando y cable cambiado
+        entrada : [pantalla_negra,ventiladores_giran,prueba(cambio_cable,resuelve)]
+        esperado: ok | obtenido: ok
+[OK  ] b05 Refrigeración: 97 °C y ventilador ruidoso
+        entrada : [temp_cpu(97),ventilador_ruidoso]
+        esperado: ok | obtenido: ok
+[OK  ] b06 97 °C con nivel discreto "critica"
+        entrada : [temp_cpu(97),dato(temperatura_cpu,critica)]
+        esperado: datos_insuficientes | obtenido: datos_insuficientes
+[OK  ] b07 Dos lecturas de temperatura cercanas
+        entrada : [temp_cpu(90),temp_cpu(95),ventilador_ruidoso]
+        esperado: ok | obtenido: ok
+[OK  ] b08 Mismo resultado de prueba repetido
+        entrada : [pantalla_negra,ventiladores_giran,prueba(cambio_cable,resuelve),prueba(cambio_cable,resuelve)]
+        esperado: ok | obtenido: ok
+[OK  ] b09 Ausencia de un síntoma distinto del reportado
+        entrada : [olor_quemado,ausente(lentitud)]
+        esperado: datos_insuficientes | obtenido: datos_insuficientes
+[OK  ] b10 Equipo antiguo con nivel "antiguo"
+        entrada : [hora_incorrecta,equipo(escritorio,7),dato(antiguedad,antiguo)]
+        esperado: ok | obtenido: ok
+[OK  ] b11 Pantalla azul y reinicios (RAM)
+        entrada : [pantalla_azul,reinicios_aleatorios,prueba(reasentar_ram,resuelve)]
+        esperado: ok | obtenido: ok
+[OK  ] b13 Pantalla negra con líneas y ventiladores (caso GPU)
+        entrada : [pantalla_negra,ventiladores_giran,lineas_en_pantalla,prueba(cambio_cable,no_resuelve),prueba(otro_monitor,no_resuelve)]
+        esperado: ok | obtenido: ok
+[OK  ] b12 Temperatura de 10 grados (límite inferior plausible)
+        entrada : [temp_cpu(10),ventilador_ruidoso]
+        esperado: datos_insuficientes | obtenido: datos_insuficientes
+
+--- C. Lenguaje natural ambiguo (DCG) ---
+[OK  ] c01 mi pc no huele a quemado
+        entrada : [ausente(olor_quemado)]
+        esperado: datos_insuficientes | obtenido: datos_insuficientes
+[OK  ] c02 no se apaga nunca
+        entrada : [ausente(apagados_repentinos)]
+        esperado: datos_insuficientes | obtenido: datos_insuficientes
+[OK  ] c03 el computador si enciende
+        entrada : [ausente(no_enciende)]
+        esperado: datos_insuficientes | obtenido: datos_insuficientes
+[OK  ] c04 mi pc no prende pero los ventiladores giran
+        entrada : [no_enciende,ventiladores_giran]
+        esperado: entrada_contradictoria | obtenido: entrada_contradictoria
+[OK  ] c05 huele a quemado y no huele a quemado
+        entrada : [olor_quemado,ausente(olor_quemado)]
+        esperado: entrada_contradictoria | obtenido: entrada_contradictoria
+[OK  ] c06 no enciende y el pc enciende normal
+        entrada : [no_enciende,ausente(no_enciende)]
+        esperado: entrada_contradictoria | obtenido: entrada_contradictoria
+[OK  ] c07 la cpu esta a 200 grados
+        entrada : [temp_cpu(200)]
+        esperado: entrada_contradictoria | obtenido: entrada_contradictoria
+[OK  ] c08 la cpu esta a 60 grados y a 99 grados
+        entrada : [temp_cpu(60),temp_cpu(99)]
+        esperado: entrada_contradictoria | obtenido: entrada_contradictoria
+[OK  ] c09 mi portatil de 2 años y mi escritorio de 9 años
+        entrada : [equipo(portatil,2),equipo(escritorio,9)]
+        esperado: entrada_contradictoria | obtenido: entrada_contradictoria
+[OK  ] c10 no enciende ni huele a quemado
+        entrada : [no_enciende,ausente(olor_quemado)]
+        esperado: datos_insuficientes | obtenido: datos_insuficientes
+[OK  ] c11 no se reinicia ni se apaga
+        entrada : [ausente(reinicios_aleatorios),ausente(apagados_repentinos)]
+        esperado: datos_insuficientes | obtenido: datos_insuficientes
+[OK  ] c12 Mi PC NO PRENDE, y huele a quemado!!!
+        entrada : [no_enciende,olor_quemado]
+        esperado: ok | obtenido: ok
+[OK  ] c13 la pantalla esta negra y la pantalla se pone azul
+        entrada : [pantalla_negra,pantalla_azul]
+        esperado: entrada_contradictoria | obtenido: entrada_contradictoria
+[OK  ] c14 mi portátil de 7 años pierde la fecha y hora
+        entrada : [hora_incorrecta,equipo(portatil,7)]
+        esperado: ok | obtenido: ok
+[OK  ] c15 el pc va lento y la cpu está a 95 grados
+        entrada : [lentitud,temp_cpu(95)]
+        esperado: datos_insuficientes | obtenido: datos_insuficientes
+
+--- D. Robustez ante entradas malformadas ---
+[OK  ] d01 Entrada que no es lista
+        entrada : foo
+        esperado: entrada_invalida | obtenido: entrada_invalida
+[OK  ] d02 Lista vacía
+        entrada : []
+        esperado: entrada_vacia | obtenido: entrada_vacia
+[OK  ] d03 Solo elementos desconocidos
+        entrada : [xyz,temp_cpu(abc),42]
+        esperado: entrada_invalida | obtenido: entrada_invalida
+[OK  ] d04 Variable sin instanciar dentro de la lista
+        entrada : [_1234,no_enciende]
+        esperado: datos_insuficientes | obtenido: datos_insuficientes
+[OK  ] d05 ausente/1 con síntoma inexistente
+        entrada : [ausente(inventado)]
+        esperado: entrada_invalida | obtenido: entrada_invalida
+[OK  ] d06 Duplicados exactos
+        entrada : [pantalla_negra,pantalla_negra,pantalla_negra]
+        esperado: datos_insuficientes | obtenido: datos_insuficientes
+[OK  ] d07 Temperatura negativa
+        entrada : [temp_cpu(-40)]
+        esperado: entrada_contradictoria | obtenido: entrada_contradictoria
+[OK  ] d08 Temperatura decimal fuera de rango
+        entrada : [temp_cpu(150.5),lentitud]
+        esperado: entrada_contradictoria | obtenido: entrada_contradictoria
+
+--- E. Propiedades y recorrido exhaustivo ---
+[OK  ] E1 todos los pares de síntomas dan un estado válido (171 casos)
+[OK  ] E2 una contradicción nunca emite diagnóstico (171 casos)
+[OK  ] E3 el estado no depende del orden de los hechos (171 casos)
+[OK  ] E4 todos los síntomas juntos se bloquean (19 casos)
+[OK  ] E5 analizar_caso/2 coincide con consultar_caso/2 (171 casos)
+        600 hechos repetidos: datos_insuficientes en 0.063 s
+[OK  ] E6 entrada larga resuelta sin error (600 casos)
+
+=== RESULTADO: 62 de 62 verificaciones aprobadas ===
+TODAS LAS PRUEBAS PASARON

@@ -16,6 +16,7 @@
 %%    PARTE F. EXPLICABILIDAD            trazas y datos faltantes
 %%    PARTE G. LENGUAJE NATURAL (DCG)    oraciones libres -> hechos simbólicos
 %%    PARTE H. MODO EXPERTO              reglas y alias aprendidos en caliente
+%%    PARTE I. CONSISTENCIA              contradicciones entre hechos (bloquean el diagnóstico)
 %%    CONOCIMIENTO APRENDIDO             bloque final que escribe el modo experto
 %%
 %%  PREVENCIÓN DE CICLOS
@@ -620,6 +621,9 @@ clasificar_item(equipo(T, A), equipo) :-
     integer(A), A >= 0, !.
 clasificar_item(dato(V, N), discreto) :-
     nivel_discreto(V, N), !.
+clasificar_item(ausente(S), ausencia) :-     % síntoma negado ("no huele a quemado")
+    atom(S),
+    sintoma_catalogo(S, _), !.
 clasificar_item(S, sintoma) :-
     atom(S),
     sintoma_catalogo(S, _), !.
@@ -720,6 +724,8 @@ cargar_item(Id, pitidos(P))     :- !, assertz(pitidos(Id, P)).
 cargar_item(Id, prueba(N, R))   :- !, assertz(prueba(Id, N, R)).
 cargar_item(Id, equipo(T, A))   :- !, assertz(equipo(Id, T, A)).
 cargar_item(Id, dato(V, N))     :- !, assertz(discreto(Id, V, N)).
+% ausente(S) solo sirve para detectar contradicciones (parte I): no es evidencia.
+cargar_item(_, ausente(_))      :- !.
 cargar_item(Id, Sintoma)        :- assertz(observado(Id, Sintoma)).
 
 % Si la lista no trae el equipo, se registra con tipo desconocido y 0 años.
@@ -775,12 +781,16 @@ prioridad(Peso, Cobertura, Prioridad) :-
 % diagnósticos del caso. Cada elemento es una lista:
 %     [Diagnostico, Certeza, Severidad, NivelDanio, Prioridad, Cobertura, Accion]
 % Estado: ok | datos_insuficientes | entrada_vacia | entrada_invalida
+%         | entrada_contradictoria (parte I: se bloquea antes de inferir)
 diagnosticar_todos(Entrada, entrada_invalida, []) :-
     \+ is_list(Entrada), !.
 diagnosticar_todos([], entrada_vacia, []) :- !.
 diagnosticar_todos(Entrada, Estado, Diagnosticos) :-
     validar_entrada(Entrada, Validos, _Descartados),
-    evaluar_validos(Validos, Estado, Diagnosticos).
+    (   detectar_contradicciones(Validos, [_|_])
+    ->  Estado = entrada_contradictoria, Diagnosticos = []
+    ;   evaluar_validos(Validos, Estado, Diagnosticos)
+    ).
 
 evaluar_validos([], entrada_invalida, []) :- !.
 evaluar_validos(Validos, Estado, Diagnosticos) :-
@@ -848,7 +858,10 @@ recolectar_sospechas(Id, Sospechosos) :-
 % Respuesta = [Estado, Diagnosticos, Sospechosos, Descartados]
 consultar_caso(Entrada, [Estado, Diagnosticos, Sospechosos, Descartados]) :-
     diagnosticar_todos(Entrada, Estado, Diagnosticos),
-    componentes_sospechosos(Entrada, Sospechosos),
+    (   Estado == entrada_contradictoria
+    ->  Sospechosos = []                     % no se sospecha sobre datos incoherentes
+    ;   componentes_sospechosos(Entrada, Sospechosos)
+    ),
     descartados_como_texto(Entrada, Descartados).
 
 % descartados_como_texto(+Entrada, -ListaDeAtomos)
@@ -897,6 +910,10 @@ analizar_caso(Entrada, [entrada_invalida, [], [], [], [], []]) :-
 analizar_caso([], [entrada_vacia, [], [], [], [], Sugerencias]) :-
     !,
     sugerencia_entrada_vacia(Sugerencias).
+analizar_caso(Entrada, [entrada_contradictoria, [], [], DescartadosTexto, [], []]) :-
+    validar_entrada(Entrada, Validos, Descartados),
+    detectar_contradicciones(Validos, [_|_]), !,   % parte I: bloquea el diagnóstico
+    atomizar_descartados(Descartados, DescartadosTexto).
 analizar_caso(Entrada, Reporte) :-
     validar_entrada(Entrada, Validos, Descartados),
     setup_call_cleanup(
@@ -1318,6 +1335,171 @@ sugerencia_entrada_vacia([[Descripcion, Razon, []]]) :-
 
 
 %% =============================================================================
+%%  PARTE I. CONSISTENCIA DE LOS HECHOS (Entregable 4)
+%%
+%%  Antes de inferir, el sistema comprueba que los hechos del caso no se
+%%  contradigan según el dominio (p. ej. "no enciende" y "los ventiladores
+%%  giran"). Si hay alguna contradicción, diagnosticar_todos/3 y analizar_caso/2
+%%  responden con el estado 'entrada_contradictoria' y NO emiten diagnóstico:
+%%  es preferible pedir una aclaración que concluir sobre datos incompatibles.
+%%
+%%  Cada contradicción es una lista [Tipo, Elementos, Motivo] (átomos):
+%%     sintomas_incompatibles   dos hechos que no pueden darse a la vez
+%%     afirmado_y_negado        un síntoma reportado y negado ("no huele a quemado")
+%%     lectura_imposible        temperatura fuera del rango físico plausible
+%%     lecturas_discrepantes    dos temperaturas muy distintas en el mismo caso
+%%     nivel_discordante        una lectura numérica y su nivel discreto no coinciden
+%%     datos_duplicados         dos valores distintos para el mismo dato
+%%                              (prueba, patrón de pitidos, equipo, nivel)
+%% =============================================================================
+
+%% -----------------------------------------------------------------------------
+%%  I.1 Conocimiento de incompatibilidades
+%% -----------------------------------------------------------------------------
+
+% Síntomas que solo puede presentar un equipo que recibe energía y arranca.
+% (led_encendido no está: un LED de reserva sí puede verse sin que arranque.)
+sintoma_requiere_energia(ventiladores_giran).
+sintoma_requiere_energia(ventilador_ruidoso).
+sintoma_requiere_energia(pitidos_arranque).
+sintoma_requiere_energia(pantalla_azul).
+sintoma_requiere_energia(lineas_en_pantalla).
+sintoma_requiere_energia(artefactos_video).
+sintoma_requiere_energia(lentitud).
+sintoma_requiere_energia(arranque_lento).
+sintoma_requiere_energia(bloqueos).
+sintoma_requiere_energia(reinicios_aleatorios).
+sintoma_requiere_energia(ruido_clic).
+
+% limite_plausible(+Variable, -Minimo, -Maximo): rango físico razonable.
+limite_plausible(temp_cpu, 10, 125).
+% Diferencia máxima tolerada entre dos lecturas de temperatura del mismo caso.
+tolerancia_lecturas(temp_cpu, 15).
+
+% incompatible_dirigido(?A, ?B, -Motivo): A excluye a B. Se declara en un solo
+% sentido; incompatible/3 lo hace simétrico.
+incompatible_dirigido(no_enciende, S, Motivo) :-
+    sintoma_requiere_energia(S),
+    format(atom(Motivo),
+           'Si el equipo no enciende no puede presentar «~w».', [S]).
+incompatible_dirigido(pantalla_negra, S, Motivo) :-
+    S = pantalla_azul,
+    format(atom(Motivo),
+           'Una pantalla en negro (sin imagen) no puede estar a la vez en «~w».', [S]).
+incompatible_dirigido(ventilador_detenido, S, Motivo) :-
+    memberchk(S, [ventiladores_giran, ventilador_ruidoso]),
+    format(atom(Motivo),
+           'Un ventilador detenido no puede cumplir a la vez «~w».', [S]).
+incompatible_dirigido(disco_no_encontrado, prueba(smart_disco, _),
+    'Si el disco no es detectado no se puede leer su estado de salud (SMART).').
+
+incompatible(A, B, Motivo) :- incompatible_dirigido(A, B, Motivo).
+incompatible(A, B, Motivo) :- incompatible_dirigido(B, A, Motivo).
+
+% Nivel discreto que corresponde a una lectura numérica (mismos cortes que
+% preprocesamiento.py: temperatura 70/86/95 °C, antigüedad 2/5 años).
+nivel_temperatura(V, normal)  :- V < 70, !.
+nivel_temperatura(V, elevada) :- V < 86, !.
+nivel_temperatura(V, alta)    :- V < 95, !.
+nivel_temperatura(_, critica).
+
+nivel_antiguedad(A, nuevo)   :- A < 2, !.
+nivel_antiguedad(A, medio)   :- A < 5, !.
+nivel_antiguedad(_, antiguo).
+
+%% -----------------------------------------------------------------------------
+%%  I.2 Detección de contradicciones
+%% -----------------------------------------------------------------------------
+
+% contradiccion(+Validos, -[Tipo, Elementos, Motivo])
+contradiccion(Validos, [sintomas_incompatibles, Texto, Motivo]) :-
+    member(A, Validos), member(B, Validos),
+    A @< B,                                   % cada par se reporta una vez
+    incompatible(A, B, Motivo),
+    elementos_texto([A, B], Texto).
+contradiccion(Validos, [afirmado_y_negado, Texto, Motivo]) :-
+    member(ausente(S), Validos),
+    memberchk(S, Validos),
+    elementos_texto([S, ausente(S)], Texto),
+    format(atom(Motivo),
+           'Se reportó «~w» y a la vez se dijo que NO ocurre.', [S]).
+contradiccion(Validos, [lectura_imposible, Texto, Motivo]) :-
+    member(temp_cpu(V), Validos),
+    limite_plausible(temp_cpu, Min, Max),
+    ( V < Min ; V > Max ),
+    elementos_texto([temp_cpu(V)], Texto),
+    format(atom(Motivo),
+           'Una temperatura de ~w °C está fuera del rango posible (~w a ~w °C).',
+           [V, Min, Max]).
+contradiccion(Validos, [lecturas_discrepantes, Texto, Motivo]) :-
+    member(temp_cpu(V1), Validos), member(temp_cpu(V2), Validos),
+    V1 < V2,
+    tolerancia_lecturas(temp_cpu, Tol),
+    V2 - V1 > Tol,
+    elementos_texto([temp_cpu(V1), temp_cpu(V2)], Texto),
+    format(atom(Motivo),
+           'Dos lecturas de temperatura (~w y ~w °C) difieren en más de ~w grados.',
+           [V1, V2, Tol]).
+contradiccion(Validos, [nivel_discordante, Texto, Motivo]) :-
+    member(temp_cpu(V), Validos),
+    member(dato(temperatura_cpu, Nivel), Validos),
+    nivel_temperatura(V, Esperado),
+    Esperado \== Nivel,
+    elementos_texto([temp_cpu(V), dato(temperatura_cpu, Nivel)], Texto),
+    format(atom(Motivo),
+           '~w °C corresponde al nivel «~w», no a «~w».', [V, Esperado, Nivel]).
+contradiccion(Validos, [nivel_discordante, Texto, Motivo]) :-
+    member(equipo(Tipo, A), Validos),
+    member(dato(antiguedad, Nivel), Validos),
+    nivel_antiguedad(A, Esperado),
+    Esperado \== Nivel,
+    elementos_texto([equipo(Tipo, A), dato(antiguedad, Nivel)], Texto),
+    format(atom(Motivo),
+           '~w años corresponde al nivel «~w», no a «~w».', [A, Esperado, Nivel]).
+contradiccion(Validos, [datos_duplicados, Texto, Motivo]) :-
+    member(prueba(N, R1), Validos), member(prueba(N, R2), Validos),
+    R1 @< R2,
+    elementos_texto([prueba(N, R1), prueba(N, R2)], Texto),
+    format(atom(Motivo),
+           'La prueba «~w» tiene dos resultados distintos (~w y ~w).', [N, R1, R2]).
+contradiccion(Validos, [datos_duplicados, Texto, Motivo]) :-
+    member(pitidos(P1), Validos), member(pitidos(P2), Validos),
+    P1 @< P2,
+    elementos_texto([pitidos(P1), pitidos(P2)], Texto),
+    format(atom(Motivo),
+           'Se informaron dos patrones de pitidos distintos (~w y ~w).', [P1, P2]).
+contradiccion(Validos, [datos_duplicados, Texto, Motivo]) :-
+    member(equipo(T1, A1), Validos), member(equipo(T2, A2), Validos),
+    equipo(T1, A1) @< equipo(T2, A2),
+    elementos_texto([equipo(T1, A1), equipo(T2, A2)], Texto),
+    Motivo = 'Se informaron dos equipos distintos (tipo o antigüedad) en el mismo caso.'.
+contradiccion(Validos, [datos_duplicados, Texto, Motivo]) :-
+    member(dato(V, N1), Validos), member(dato(V, N2), Validos),
+    N1 @< N2,
+    elementos_texto([dato(V, N1), dato(V, N2)], Texto),
+    format(atom(Motivo),
+           'La variable «~w» tiene dos niveles distintos (~w y ~w).', [V, N1, N2]).
+
+elementos_texto(Elementos, Texto) :-
+    maplist([E, A]>>format(atom(A), '~w', [E]), Elementos, Atomos),
+    atomic_list_concat(Atomos, ' + ', Texto).
+
+% detectar_contradicciones(+Validos, -Contradicciones)
+% Sin duplicados y en orden estable. Lista vacía = el caso es consistente.
+detectar_contradicciones(Validos, Contradicciones) :-
+    findall(C, contradiccion(Validos, C), Crudas),
+    list_to_set(Crudas, Contradicciones).
+
+% contradicciones_caso(+Entrada, -Contradicciones)
+% Interfaz para Python: filtra la entrada y la revisa.
+contradicciones_caso(Entrada, []) :-
+    \+ is_list(Entrada), !.
+contradicciones_caso(Entrada, Contradicciones) :-
+    validar_entrada(Entrada, Validos, _),
+    detectar_contradicciones(Validos, Contradicciones).
+
+
+%% =============================================================================
 %%  PARTE G. LENGUAJE NATURAL: GRAMÁTICA DE CLÁUSULAS DEFINIDAS (DCG)
 %%
 %%  Python envía la oración tal como la escribió el usuario. Prolog:
@@ -1645,6 +1827,38 @@ hecho(tipo_equipo(T))   --> tipo_de_equipo(T).
 hecho(S)                --> sintoma(S).
 hecho(S)                --> frase_alias(S).
 hecho(S)                --> identificador_sintoma(S).
+hecho(ausente(S))       --> sintoma_negado(S).
+hecho(ausente(no_enciende)) --> encendido_afirmado.
+
+% Negación (Entregable 4): "no huele a quemado" NO es olor_quemado. Un síntoma
+% precedido por 'no' o 'ni' (y, a lo sumo, dos palabras de enlace) produce
+% ausente(S). hecho_mas_largo/3 prefiere esta lectura a la del síntoma suelto
+% porque consume la negación. Los síntomas que ya son negativos por definición
+% (no_enciende, ventilador_detenido, disco_no_encontrado) no se vuelven a negar.
+sintoma_negado(S) -->
+    negador, enlace_negacion,
+    ( sintoma(S) ; frase_alias(S) ),
+    { \+ memberchk(S, [no_enciende, ventilador_detenido, disco_no_encontrado]) },
+    opcional([nunca]).
+
+negador --> [no].
+negador --> [ni].
+
+enlace_negacion --> [].
+enlace_negacion --> palabra_de_enlace, enlace_negacion_resto.
+enlace_negacion_resto --> [].
+enlace_negacion_resto --> palabra_de_enlace.
+palabra_de_enlace --> [P], { memberchk(P, [se, me, hay, tiene, tienen, presenta,
+                                            sale, esta, sigue, veo, noto, tengo,
+                                            hace, nada]) }.
+
+% "mi pc sí enciende", "el equipo enciende normal": el equipo SÍ arranca, lo
+% que contradice 'no_enciende' si el usuario también lo reportó.
+encendido_afirmado -->
+    opcional(palabra(sustantivo_equipo)),
+    (   [si], palabra(encender)
+    ;   palabra(encender), ( [normal] ; [normalmente] ; [bien] )
+    ).
 
 % Un alias (base o aprendido) es una secuencia fija de palabras.
 frase_alias(Sintoma) -->
@@ -1691,11 +1905,11 @@ numero(N) --> [P], { numero_palabra(P, N) }.
 % "95 grados", "la cpu esta a 97 grados", "temperatura de 90"
 temperatura(T) -->
     numero(T), palabra(unidad_temp),
-    { between(0, 150, T) }.
+    { between(0, 500, T) }.
 temperatura(T) -->
     det_opt, palabra(palabra_temp), puente_temp, numero(T),
     opcional(palabra(unidad_temp)),
-    { between(0, 150, T) }.
+    { between(0, 500, T) }.
 
 puente_temp --> [].
 puente_temp --> palabra(puente_temp), puente_temp.
@@ -1865,11 +2079,27 @@ parsear_oracion(Texto, Hechos, NoReconocidas) :-
 % Sin antigüedad el tipo solo no aporta a ninguna regla y se omite.
 combinar_equipo(Crudos, Hechos) :-
     partition(dato_de_equipo, Crudos, DatosEquipo, Otros),
-    (   memberchk(antiguedad(A), DatosEquipo)
-    ->  ( memberchk(tipo_equipo(T), DatosEquipo) -> true ; T = desconocido ),
-        append(Otros, [equipo(T, A)], Hechos)
-    ;   Hechos = Otros
+    findall(A, member(antiguedad(A), DatosEquipo), Edades0),
+    list_to_set(Edades0, Edades),
+    findall(T, member(tipo_equipo(T), DatosEquipo), Tipos0),
+    list_to_set(Tipos0, Tipos),
+    (   Edades == []
+    ->  Hechos = Otros
+    ;   emparejar_equipos(Edades, Tipos, Equipos),
+        append(Otros, Equipos, Hechos)
     ).
+
+% emparejar_equipos(+Edades, +Tipos, -Equipos)
+% Una antigüedad distinta por cada "equipo" mencionado: así "mi portátil de 2
+% años y mi escritorio de 9 años" llega a la parte I como dos equipos distintos
+% (contradicción) en lugar de descartar en silencio el segundo.
+emparejar_equipos([], _, []).
+emparejar_equipos([A|Resto], Tipos, [equipo(T, A)|Equipos]) :-
+    (   Tipos = []  -> T = desconocido, Siguientes = []
+    ;   Tipos = [T] -> Siguientes = Tipos
+    ;   Tipos = [T|Siguientes]
+    ),
+    emparejar_equipos(Resto, Siguientes, Equipos).
 
 dato_de_equipo(antiguedad(_)).
 dato_de_equipo(tipo_equipo(_)).

@@ -210,6 +210,7 @@ ESTADOS = {
     "datos_insuficientes": "La información no basta para confirmar un diagnóstico.",
     "entrada_vacia": "No se proporcionaron datos para analizar.",
     "entrada_invalida": "No se encontraron condiciones válidas.",
+    "entrada_contradictoria": "Los datos son incompatibles entre sí.",
 }
 
 
@@ -249,7 +250,10 @@ def describir_condicion(condicion: str) -> str:
 
 def describir_hecho_dcg(hecho: str) -> str:
     """Etiqueta corta para un hecho extraído por la DCG."""
-    coincidencia = re.fullmatch(r"temp_cpu\((\d+)\)", hecho)
+    coincidencia = re.fullmatch(r"ausente\(([^)]+)\)", hecho)
+    if coincidencia:
+        return f"NO ocurre: {describir_condicion(coincidencia.group(1)).lower()}"
+    coincidencia = re.fullmatch(r"temp_cpu\((-?\d+(?:\.\d+)?)\)", hecho)
     if coincidencia:
         return f"Temperatura {coincidencia.group(1)} °C"
     coincidencia = re.fullmatch(r"equipo\(([^,]+),\s*(\d+)\)", hecho)
@@ -696,11 +700,15 @@ def mostrar_resultado(respuesta: Respuesta) -> None:
         "datos_insuficientes": ("🔎", "Hace falta información para confirmar una falla"),
         "entrada_vacia": ("ℹ️", "Aún no hay información para analizar"),
         "entrada_invalida": ("⚠️", "No se encontraron datos válidos"),
+        "entrada_contradictoria": ("⛔", "Hay datos que se contradicen"),
     }
     icono, mensaje = mensajes_estado.get(
         respuesta.estado, ("ℹ️", ESTADOS.get(respuesta.estado, respuesta.estado))
     )
-    st.info(f"{icono} **{mensaje}.**")
+    if respuesta.estado == "entrada_contradictoria":
+        st.error(f"{icono} **{mensaje}.** Prolog bloqueó el diagnóstico para no emitir uno erróneo.")
+    else:
+        st.info(f"{icono} **{mensaje}.**")
 
     entrada = st.session_state.get("harddiag_ultima_entrada")
     if entrada or respuesta.hechos_dcg:
@@ -712,6 +720,18 @@ def mostrar_resultado(respuesta: Respuesta) -> None:
                 st.markdown("**Palabras no reconocidas:** " + ", ".join(respuesta.no_reconocidas))
             if entrada:
                 st.code(f"analizar_caso([{', '.join(entrada)}], Reporte).", language="prolog")
+
+    if respuesta.estado == "entrada_contradictoria":
+        st.markdown("### Contradicciones encontradas")
+        for contradiccion in respuesta.contradicciones:
+            with st.container(border=True):
+                partes = [describir_hecho_dcg(parte)
+                          for parte in contradiccion.elementos.split(" + ")]
+                st.markdown("**" + "  ⟷  ".join(partes) + "**")
+                st.write(contradiccion.motivo)
+                st.caption(f"Regla de consistencia: {contradiccion.tipo}")
+        st.info("Corrige o quita uno de los datos en conflicto y vuelve a analizar.")
+        return
 
     if respuesta.diagnosticos:
         if len(respuesta.diagnosticos) > 1:

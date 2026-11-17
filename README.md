@@ -194,11 +194,52 @@ Prolog los usa en R3b (sobrecalentamiento), R7b (equipo antiguo), R8b (factor de
 
 Para ensayar sin tocar la base real puedes apuntar la app a una copia: `$env:HARDDIAG_BASE_CONOCIMIENTO = "C:\ruta\copia.pl"; py -m streamlit run main.py`.
 
+## Entregable 4: contradicciones, pruebas de estrés y sustentación
+
+### 1. Manejo de contradicciones (parte I de `base_conocimiento.pl`)
+
+Antes de inferir, Prolog revisa que los hechos del caso sean lógicamente compatibles. Si no lo son, `diagnosticar_todos/3` y `analizar_caso/2` devuelven el estado **`entrada_contradictoria`** y **no emiten diagnóstico, sospechosos, explicación ni sugerencias**: es mejor pedir una aclaración que concluir sobre datos incoherentes. La interfaz muestra cada contradicción con su motivo.
+
+| Tipo | Ejemplo | Por qué se bloquea |
+| --- | --- | --- |
+| `sintomas_incompatibles` | `no_enciende` + `ventiladores_giran` | Un equipo sin energía no puede tener ventiladores girando, pantalla azul, lentitud, clics del disco... |
+| `afirmado_y_negado` | «huele a quemado y no huele a quemado» | El mismo síntoma se reporta y se niega. |
+| `lectura_imposible` | `temp_cpu(500)` o `temp_cpu(3)` | Fuera del rango físico 10–125 °C. |
+| `lecturas_discrepantes` | `temp_cpu(40)` + `temp_cpu(99)` | Dos lecturas del mismo caso difieren en más de 15 °C. |
+| `nivel_discordante` | `temp_cpu(97)` + `dato(temperatura_cpu, normal)` | La lectura y su nivel discreto no coinciden. |
+| `datos_duplicados` | `prueba(cambio_cable, ok)` + `prueba(cambio_cable, falla)` | Dos valores distintos para el mismo dato (prueba, pitidos, equipo, nivel). |
+
+No se bloquea lo que sí puede ocurrir: `no_enciende` con `led_encendido` (LED de reserva), `no_enciende` con pitidos de la BIOS, `pantalla_negra` con `lineas_en_pantalla` (caso de GPU). La detección vive solo en Prolog; Python únicamente invoca `contradicciones_caso/2` (`MotorInferencia.verificar_consistencia`) y presenta el resultado.
+
+**Negación en la DCG.** La auditoría de entradas ambiguas descubrió que «mi pc *no* huele a quemado» se leía como `olor_quemado`. La DCG ahora produce `ausente(olor_quemado)` (un síntoma precedido por *no* o *ni*), y «sí enciende» produce `ausente(no_enciende)`. Estos hechos no son evidencia para el diagnóstico, pero permiten detectar `afirmado_y_negado`. También se aceptan temperaturas de hasta 500 °C en la oración (para señalarlas como imposibles en lugar de ignorarlas) y varias antigüedades («un portátil de 2 años y un escritorio de 9 años» → dos equipos distintos).
+
+### 2. Pruebas de estrés
+
+```powershell
+swipl -q -f none -g correr_pruebas -t halt pruebas_estres.pl   # solo necesita SWI-Prolog
+py pruebas.py                                                 # incluye el bloque «CONSISTENCIA»
+```
+
+`pruebas_estres.pl` ejecuta 62 verificaciones: 20 contradicciones que deben bloquearse, 13 combinaciones coherentes que no deben bloquearse (falsos positivos), 15 oraciones ambiguas enviadas a la DCG, 8 entradas malformadas (no es lista, variables sueltas, temperaturas negativas, `ausente/1` inventado...) y 6 propiedades verificadas sobre **todos los pares de los 19 síntomas** (171 pares): estado siempre válido, una contradicción nunca emite diagnóstico, el resultado no depende del orden de los hechos, `analizar_caso/2` coincide con `consultar_caso/2`, los 19 síntomas juntos se bloquean y una entrada de 600 hechos se resuelve en menos de 0,1 s. La salida queda en `evidencia_estres.txt`; `pruebas.py` repite lo esencial a través de PySwip y también ejecuta esta batería.
+
+### 3. Informe técnico
+
+`informe_tecnico.pdf` consolida la arquitectura final, el árbol lógico principal y el reporte de las pruebas de estrés (fuente en `informe_tecnico.html`).
+
+### 4. Sustentación: dónde modificar en vivo
+
+| Integrante | Tarea típica | Dónde |
+| --- | --- | --- |
+| A (motor simbólico) | Cambiar un corte `!` o la gramática | `clasificar_item/2`, `estado_caso/2` y `cobertura/3` (cortes); `hecho//1`, `sintoma//1`, `sintoma_negado//1` y `vocabulario/2` (DCG); `incompatible_dirigido/3` y `contradiccion/2` (consistencia). |
+| B (integración) | Captura en Python o traza de la caja blanca | `preparar_entrada()` y `mostrar_resultado()` en `main.py`; `MotorInferencia.analizar_caso()` y `formatear_respuesta()` en `motor_inferencia.py`; `presentar_hecho()`/`presentar_negacion()` (traza). |
+
+Para agregar una incompatibilidad basta una cláusula: `incompatible_dirigido(ventilador_detenido, temp_cpu_baja, 'Motivo').` — y comprobarla con `swipl -g correr_pruebas -t halt pruebas_estres.pl`.
+
 ## ¿Qué contiene el proyecto?
 
 | Archivo | Descripción |
 | --- | --- |
-| `base_conocimiento.pl` | Base Prolog: hechos, reglas R1–R26, diagnóstico, trazas y sugerencias (partes A–F), DCG de lenguaje natural (parte G), adquisición de conocimiento (parte H) y el bloque de conocimiento aprendido. |
+| `base_conocimiento.pl` | Base Prolog: hechos, reglas R1–R26, diagnóstico, trazas y sugerencias (partes A–F), DCG de lenguaje natural (parte G), adquisición de conocimiento (parte H), consistencia de hechos (parte I) y el bloque de conocimiento aprendido. |
 | `motor_inferencia.py` | Adaptador PySwip: carga Prolog, envía oraciones a la DCG, inyecta reglas y alias con `assertz/1`, los persiste en el `.pl` y convierte respuestas, explicaciones y sugerencias. |
 | `main.py` | Interfaz Streamlit: diagnóstico normal, inicio de sesión y panel del modo experto. |
 | `autenticacion.py` | Verificación del rol Experto con hashes PBKDF2 y comando `--configurar`. |
@@ -206,7 +247,9 @@ Para ensayar sin tocar la base real puedes apuntar la app a una copia: `$env:HAR
 | `preprocesamiento.py` | Clasificador ligero (scikit-learn) que discretiza lecturas numéricas. |
 | `datos_preprocesamiento.csv` | Dataset sintético con el que se entrena el clasificador. |
 | `main_consola.py` | Interfaz interactiva original por consola (acepta oraciones libres). |
-| `pruebas.py` | Casos del motor, integración, DCG y persistencia de reglas aprendidas. |
+| `pruebas.py` | Casos del motor, integración, DCG, consistencia (Entregable 4) y persistencia de reglas aprendidas. |
+| `pruebas_estres.pl` | Batería de estrés en Prolog puro (contradicciones, DCG ambigua, robustez, propiedades); salida en `evidencia_estres.txt`. |
+| `informe_tecnico.pdf` | Informe técnico del Entregable 4 (fuente `informe_tecnico.html`). |
 | `evidencia_pruebas.txt` | Salida guardada por `pruebas.py`. |
 | `requirements.txt` | Dependencias Python del proyecto. |
 | `web_app.py`, `index.html` | Interfaz web HTTP anterior; se conserva como alternativa, pero el entregable principal es la interfaz Streamlit. |
@@ -240,11 +283,12 @@ Los componentes cubiertos son fuente de poder, placa base, procesador/refrigerac
 py pruebas.py
 ```
 
-El script ejecuta 34 verificaciones y guarda la salida en `evidencia_pruebas.txt`:
+El script ejecuta 58 verificaciones y guarda la salida en `evidencia_pruebas.txt`:
 
 - 11 casos base del motor (diagnóstico, exclusiones, bordes).
 - 9 comprobaciones de integración: explicación, datos insuficientes, varias hipótesis, sugerencias, entrada sin diagnóstico, inventario, descripción natural, **oración completa → DCG → diagnóstico** y **preprocesamiento → `dato/2` → R3b**.
 - 10 oraciones en español analizadas por la DCG.
+- 24 verificaciones de consistencia del Entregable 4 (10 contradicciones, 7 oraciones ambiguas, 5 coherentes, 1 de `analizar_caso` y la batería `pruebas_estres.pl`).
 - 4 fases de persistencia sobre una **copia temporal** de `base_conocimiento.pl`; cada fase corre en un proceso de Python nuevo (equivale a reiniciar la app): crear la regla y un alias, verificar tras el reinicio que siguen en el `.pl` y diagnostican (y que la condición excluyente funciona), eliminarlos y verificar tras otro reinicio que ya no existen.
 
 El comando debe terminar con código 0 e informar todas las verificaciones aprobadas.

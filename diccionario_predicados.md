@@ -110,3 +110,19 @@ La base contiene exactamente **46 hechos**: 6 componentes, 19 síntomas, 10 hech
 | `agregar_alias/2`, `olvidar_alias/2`, `listar_aliases_aprendidos/1` | H | Alias aprendidos (`alias_aprendido/2`, dinámico). |
 | `listar_reglas_aprendidas/1`, `contenido_aprendido/1` | H | Listado para Python y texto del bloque persistido (`portray_clause/1`). |
 | `catalogo_variables_discretas/1`, `nivel_discreto/2`, `discreto/3` | A.15, C | Niveles `dato(Variable, Nivel)` del pre-procesamiento numérico; R3b, R6b, R7b y R8b los usan. |
+
+## 7. Entregable 4: consistencia de los hechos (parte I) y negación en la DCG
+
+| Firma | Parte | Descripción |
+| --- | --- | --- |
+| `sintoma_requiere_energia/1` | I.1 | Síntomas imposibles si el equipo no enciende (no incluye `led_encendido`: un LED de reserva es posible). |
+| `incompatible_dirigido/3`, `incompatible/3` | I.1 | `incompatible(A, B, Motivo)`: A y B no pueden darse a la vez. La forma dirigida se declara en un sentido; `incompatible/3` la hace simétrica. |
+| `limite_plausible/3`, `tolerancia_lecturas/2` | I.1 | Rango físico de la temperatura (10–125 °C) y diferencia máxima entre dos lecturas (15 °C). |
+| `nivel_temperatura/2`, `nivel_antiguedad/2` | I.1 | Nivel discreto que corresponde a una lectura numérica (mismos cortes que `preprocesamiento.py`). |
+| `contradiccion(+Validos, -[Tipo, Elementos, Motivo])` | I.2 | Una cláusula por tipo: `sintomas_incompatibles`, `afirmado_y_negado`, `lectura_imposible`, `lecturas_discrepantes`, `nivel_discordante`, `datos_duplicados`. |
+| `detectar_contradicciones(+Validos, -Lista)` | I.2 | Todas las contradicciones del caso, sin duplicados. Lista vacía = caso coherente. |
+| `contradicciones_caso(+Entrada, -Lista)` | I.2 | Interfaz para Python (`MotorInferencia.verificar_consistencia`): valida la entrada y la revisa. |
+| `diagnosticar_todos/3`, `analizar_caso/2` | D, F | Si hay contradicciones devuelven el estado `entrada_contradictoria` sin diagnósticos, sospechosos, explicación ni sugerencias. |
+| `ausente(Sintoma)` | C, G | Hecho de entrada que significa «el síntoma NO ocurre». `clasificar_item/2` lo acepta; `cargar_item/2` lo ignora (no es evidencia) y solo sirve para detectar `afirmado_y_negado`. |
+| `sintoma_negado//1`, `negador//0`, `encendido_afirmado//0` | G.4 | La DCG produce `ausente(S)` para «no huele a quemado» y `ausente(no_enciende)` para «sí enciende». |
+| `emparejar_equipos/3` | G.5 | Una antigüedad por equipo mencionado, para que dos equipos distintos lleguen a la parte I. |

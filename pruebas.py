@@ -246,11 +246,17 @@ def ejecutar():
     aprobados += dcg_aprobados
     print(f" DCG: {dcg_aprobados} de {dcg_total} oraciones analizadas correctamente")
     print("=" * 72)
+    print(" CONSISTENCIA (Entregable 4): contradicciones y entradas ambiguas")
+    consistencia_aprobadas, consistencia_total = evaluar_consistencia(motor)
+    aprobados += consistencia_aprobadas
+    print(f" CONSISTENCIA: {consistencia_aprobadas} de {consistencia_total} verificaciones aprobadas")
+    print("=" * 72)
     print(" PERSISTENCIA: regla aprendida en caliente y reinicios")
     persistencia_aprobadas, persistencia_total = evaluar_persistencia()
     aprobados += persistencia_aprobadas
     print(f" PERSISTENCIA: {persistencia_aprobadas} de {persistencia_total} fases aprobadas")
-    total_casos = len(CASOS) + integraciones_total + dcg_total + persistencia_total
+    total_casos = (len(CASOS) + integraciones_total + dcg_total
+                   + consistencia_total + persistencia_total)
     print("=" * 72)
     print(f" RESUMEN: {aprobados} de {total_casos} casos aprobados")
     print("=" * 72)
@@ -457,6 +463,105 @@ def evaluar_dcg(motor):
         print(f"      hechos: {analisis.hechos}  no reconocidas: {analisis.no_reconocidas}"
               f"  -> {'APROBADO' if ok else 'FALLIDO (esperado ' + str(esperados) + ')'}")
     return aprobados, len(ORACIONES_DCG)
+
+
+# --------------------------------------------------------------------------- #
+#  Entregable 4: contradicciones y entradas ambiguas
+# --------------------------------------------------------------------------- #
+# (entrada formal, tipo de contradicción que debe detectar Prolog)
+CONTRADICCIONES = [
+    ("no_enciende, ventiladores_giran", "sintomas_incompatibles"),
+    ("pantalla_negra, pantalla_azul", "sintomas_incompatibles"),
+    ("ventilador_detenido, ventilador_ruidoso", "sintomas_incompatibles"),
+    ("disco_no_encontrado, prueba(smart_disco, ok)", "sintomas_incompatibles"),
+    ("olor_quemado, ausente(olor_quemado)", "afirmado_y_negado"),
+    ("temp_cpu(500)", "lectura_imposible"),
+    ("temp_cpu(40), temp_cpu(99)", "lecturas_discrepantes"),
+    ("temp_cpu(97), dato(temperatura_cpu, normal)", "nivel_discordante"),
+    ("prueba(cambio_cable, ok), prueba(cambio_cable, falla)", "datos_duplicados"),
+    ("equipo(portatil, 2), equipo(escritorio, 9)", "datos_duplicados"),
+]
+
+# (oración ambigua, hechos que debe extraer la DCG, estado esperado)
+ORACIONES_AMBIGUAS = [
+    ("mi pc no huele a quemado", ["ausente(olor_quemado)"], "datos_insuficientes"),
+    ("el computador si enciende", ["ausente(no_enciende)"], "datos_insuficientes"),
+    ("mi pc no prende pero los ventiladores giran",
+     ["no_enciende", "ventiladores_giran"], "entrada_contradictoria"),
+    ("huele a quemado y no huele a quemado",
+     ["olor_quemado", "ausente(olor_quemado)"], "entrada_contradictoria"),
+    ("la cpu esta a 200 grados", ["temp_cpu(200)"], "entrada_contradictoria"),
+    ("mi portatil de 2 años y mi escritorio de 9 años",
+     ["equipo(portatil,2)", "equipo(escritorio,9)"], "entrada_contradictoria"),
+    ("no enciende ni huele a quemado",
+     ["no_enciende", "ausente(olor_quemado)"], "datos_insuficientes"),
+]
+
+# Combinaciones coherentes: la parte I NO debe bloquearlas (falsos positivos).
+COHERENTES = [
+    "no_enciende, led_encendido",
+    "no_enciende, prueba(fuente_con_probador, ok), pitidos(un_largo_tres_cortos)",
+    "temp_cpu(90), temp_cpu(95), ventilador_ruidoso",
+    "temp_cpu(97), dato(temperatura_cpu, critica)",
+    "olor_quemado, ausente(lentitud)",
+]
+
+
+def evaluar_consistencia(motor):
+    """Contradicciones, ambigüedad en la DCG y falsos positivos."""
+    aprobados = 0
+    total = 0
+
+    def registrar(descripcion, ok, detalle=""):
+        nonlocal aprobados, total
+        total += 1
+        aprobados += bool(ok)
+        print(f"  {descripcion}: {'APROBADO' if ok else 'FALLIDO'}")
+        if detalle:
+            print(f"      {detalle}")
+
+    print("  -- Contradicciones que Prolog debe bloquear --")
+    for entrada, tipo in CONTRADICCIONES:
+        resp = motor.consultar_texto(entrada)
+        tipos = [c.tipo for c in resp.contradicciones]
+        ok = (resp.estado == "entrada_contradictoria"
+              and not resp.diagnosticos and tipo in tipos)
+        registrar(f"[{tipo}] {entrada}", ok,
+                  f"estado={resp.estado}, tipos={tipos}")
+
+    print("  -- Entradas ambiguas en lenguaje natural (DCG) --")
+    for oracion, hechos, estado in ORACIONES_AMBIGUAS:
+        resp = motor.consultar_texto(oracion)
+        ok = resp.hechos_dcg == hechos and resp.estado == estado
+        registrar(f"«{oracion}»", ok,
+                  f"hechos={resp.hechos_dcg}, estado={resp.estado}")
+
+    print("  -- Coherentes (no deben bloquearse) --")
+    for entrada in COHERENTES:
+        resp = motor.consultar_texto(entrada)
+        registrar(entrada, resp.estado != "entrada_contradictoria",
+                  f"estado={resp.estado}")
+
+    print("  -- analizar_caso/2 también bloquea --")
+    resp = motor.analizar_caso(["no_enciende", "ventiladores_giran"])
+    registrar("analizar_caso([no_enciende, ventiladores_giran])",
+              resp.estado == "entrada_contradictoria" and not resp.explicaciones
+              and not resp.sugerencias and len(resp.contradicciones) == 1,
+              formatear_respuesta(resp).replace("\n", " | "))
+
+    print("  -- Batería de estrés en Prolog (pruebas_estres.pl) --")
+    ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pruebas_estres.pl")
+    try:
+        proceso = subprocess.run(
+            ["swipl", "-q", "-f", "none", "-g", "correr_pruebas", "-t", "halt", ruta],
+            cwd=os.path.dirname(ruta), capture_output=True, text=True,
+            encoding="utf-8", timeout=120)
+        ultima = [linea for linea in proceso.stdout.splitlines() if "RESULTADO" in linea]
+        registrar("swipl pruebas_estres.pl", proceso.returncode == 0,
+                  ultima[-1] if ultima else proceso.stderr.strip()[:200])
+    except (OSError, subprocess.TimeoutExpired) as error:
+        registrar("swipl pruebas_estres.pl", False, str(error))
+    return aprobados, total
 
 
 # --------------------------------------------------------------------------- #

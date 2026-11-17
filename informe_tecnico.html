@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>HardDiag – Informe técnico (Entregable 4)</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  body { font: 10.5pt/1.45 "Segoe UI", Arial, sans-serif; color: #1b1f24; }
+  h1 { font-size: 20pt; margin: 0 0 2pt; color: #0b3d6b; }
+  h2 { font-size: 13.5pt; color: #0b3d6b; border-bottom: 1.5px solid #0b3d6b; padding-bottom: 2pt; margin-top: 16pt; }
+  h3 { font-size: 11pt; margin: 10pt 0 3pt; }
+  .sub { color: #555; margin-bottom: 8pt; }
+  table { border-collapse: collapse; width: 100%; margin: 6pt 0; font-size: 9.5pt; }
+  th, td { border: 1px solid #b8c0c8; padding: 3pt 5pt; vertical-align: top; text-align: left; }
+  th { background: #e8eef4; }
+  code, pre { font-family: Consolas, "Courier New", monospace; font-size: 9pt; }
+  pre { background: #f3f5f7; border: 1px solid #d5dbe0; padding: 6pt 8pt; white-space: pre-wrap; margin: 6pt 0; page-break-inside: avoid; }
+  .ok { color: #0a7a2f; font-weight: 600; }
+  .nota { background: #fff7e0; border-left: 3px solid #d9a400; padding: 4pt 8pt; margin: 6pt 0; }
+  .caja { page-break-inside: avoid; }
+</style>
+</head>
+<body>
+
+<h1>HardDiag: Sistema experto de diagnóstico de hardware</h1>
+<div class="sub"><b>Informe técnico breve – Entregable 4:</b> pruebas de estrés, auditoría cruzada y sustentación<br>
+<b>Integrantes:</b> Brayan Trujillo · Luis Moncada · Sebastian Camacho<br>
+Sistemas Expertos · Fundación Escuela Tecnológica de Neiva – Jesús Oviedo Pérez · Noviembre de 2026<br>
+Repositorio: <code>github.com/brayantrujillodev/HardDiag-sistema-experto</code> (rama <code>entregable-3-dcg-modo-experto</code>)</div>
+
+<h2>1. Resumen</h2>
+<p>HardDiag orienta el diagnóstico de fallas de hardware de computadores personales. La inferencia, el lenguaje natural (DCG), la explicación y la consistencia viven en <b>SWI-Prolog</b> (<code>base_conocimiento.pl</code>); <b>Python</b> (PySwip + Streamlit) captura datos, controla el acceso del experto y presenta resultados. En este entregable se añadió una <b>puerta de consistencia</b> que detecta hechos lógicamente incompatibles y bloquea el diagnóstico antes de inferir, y se sometió el sistema a una batería de <b>62 pruebas de estrés</b> (todas aprobadas), que además destapó y corrigió dos defectos reales.</p>
+
+<h2>2. Arquitectura final</h2>
+<pre>
+ Usuario ── Streamlit (main.py) ── login Experto (autenticacion.py, PBKDF2)
+              │  oración libre · síntomas · lecturas · reglas nuevas
+              ▼
+ Adaptador PySwip (motor_inferencia.py) ── preprocesamiento.py (dato/2)
+              │  parsear_oracion_texto/3 · analizar_caso/2 · consultar_caso/2
+              │  contradicciones_caso/2 · assertz/1 · retract/1
+              ▼
+ SWI-Prolog (base_conocimiento.pl)
+   A hechos · B reglas R1–R26 (3 niveles) · C listas y cortes (!) · D recolección
+   E interfaz · F trazas y datos faltantes · G DCG · H modo experto
+   I consistencia  ← NUEVA (Entregable 4)
+   + bloque de conocimiento aprendido (persistido por Python en el propio .pl)
+</pre>
+<table>
+<tr><th>Capa</th><th>Responsabilidad</th><th>Archivos</th></tr>
+<tr><td>Simbólica (Prolog)</td><td>Reglas, DCG, negación, consistencia, trazas, validación y generación del texto persistido.</td><td><code>base_conocimiento.pl</code>, <code>pruebas_estres.pl</code></td></tr>
+<tr><td>Integración (Python)</td><td>Captura del formulario, envío a Prolog, conversión de respuestas a objetos, escritura atómica del <code>.pl</code>, presentación de la traza y de las contradicciones.</td><td><code>motor_inferencia.py</code>, <code>main.py</code>, <code>autenticacion.py</code>, <code>preprocesamiento.py</code></td></tr>
+<tr><td>Verificación</td><td>58 verificaciones por PySwip + 62 en Prolog puro.</td><td><code>pruebas.py</code>, <code>pruebas_estres.pl</code></td></tr>
+</table>
+<p>Integración bidireccional: Python → Prolog con consultas (<code>analizar_caso/2</code>) y <code>assertz/1</code>; Prolog → Python con las listas de resultado y el texto que Python escribe en el <code>.pl</code> (<code>contenido_aprendido/1</code>). La detección de contradicciones no está en Python: este solo llama a <code>contradicciones_caso/2</code>.</p>
+
+<h2>3. Árbol lógico principal</h2>
+<div class="caja">
+<pre>
+ENTRADA (síntomas · temp_cpu · pitidos · prueba · equipo · dato · ausente)
+ │
+ ├─ clasificar_item/2 ─ separa válidos / desconocidos (cortes mutuamente excluyentes)
+ │
+ ├─ PUERTA DE CONSISTENCIA (parte I)  detectar_contradicciones/2
+ │     ├─ ¿hay contradicción? ── SÍ ──► estado = entrada_contradictoria  (FIN, sin diagnóstico)
+ │     └─ NO ▼
+ │
+ ├─ Nivel 1 (hechos):  R1 sin_energia · R2 sin_video · R3/R3b sobrecalentamiento
+ │                     R4 pitidos_error · R5 inestabilidad · R6/R6b indicios por componente
+ │                     R7/R7b equipo_antiguo · R8/R8b factor_riesgo
+ ├─ Nivel 2 (N1+hechos): R9/R9b falla_energia · R10 cable_o_monitor · R11 video_interno
+ │                     R12 refrigeración · R13 memoria_sospechosa · R14 mal asentada · R15 defectuosa
+ │                     R16 almacenamiento_degradado · R17 batería CMOS · R19/R20 placa base
+ │                     R18 descartado/2 (una prueba contradice la hipótesis; se usa con \+)
+ ├─ Nivel 3 (conclusión): R21 diagnostico/3 (9 diagnósticos) · R26 reglas aprendidas en caliente
+ │
+ └─ Salida: severidad/prioridad (D) · R22 acción · R23/R24 requiere_técnico · R25 sin_diagnostico
+            traza (F): reglas comprobadas · hechos · negaciones por fallo · alternativas descartadas
+            sugerencias: qué dato o prueba distingue las hipótesis restantes
+</pre>
+</div>
+<p>Estados de salida: <code>ok</code> · <code>datos_insuficientes</code> · <code>entrada_vacia</code> · <code>entrada_invalida</code> · <code>entrada_contradictoria</code> (nuevo).</p>
+
+<h2>4. Manejo de contradicciones</h2>
+<p>Cada contradicción es una lista <code>[Tipo, Elementos, Motivo]</code>. Las incompatibilidades se declaran una sola vez en <code>incompatible_dirigido/3</code> y <code>incompatible/3</code> las hace simétricas; el resto son comprobaciones numéricas y de duplicados.</p>
+<table>
+<tr><th>Tipo</th><th>Regla de dominio</th><th>Ejemplo bloqueado</th></tr>
+<tr><td>sintomas_incompatibles</td><td>Sin energía no hay ventiladores, pantalla azul, lentitud, bloqueos, clics ni reinicios; pantalla negra ⊥ pantalla azul; ventilador detenido ⊥ girando/ruidoso; disco no detectado ⊥ prueba SMART.</td><td><code>no_enciende, ventiladores_giran</code></td></tr>
+<tr><td>afirmado_y_negado</td><td>Un síntoma no puede ocurrir y no ocurrir.</td><td>«huele a quemado y no huele a quemado»</td></tr>
+<tr><td>lectura_imposible</td><td>Temperatura de CPU fuera de 10–125 °C.</td><td><code>temp_cpu(500)</code>, <code>temp_cpu(3)</code></td></tr>
+<tr><td>lecturas_discrepantes</td><td>Dos lecturas del mismo caso a más de 15 °C.</td><td><code>temp_cpu(40), temp_cpu(99)</code></td></tr>
+<tr><td>nivel_discordante</td><td>El nivel discreto no corresponde a la lectura (cortes 70/86/95 °C y 2/5 años).</td><td><code>temp_cpu(97), dato(temperatura_cpu, normal)</code></td></tr>
+<tr><td>datos_duplicados</td><td>Dos valores distintos para la misma prueba, patrón de pitidos, equipo o variable.</td><td><code>prueba(cambio_cable, ok), prueba(cambio_cable, falla)</code></td></tr>
+</table>
+<p><b>Lo que no se bloquea</b> (por diseño): <code>no_enciende</code> con <code>led_encendido</code> (LED de reserva), <code>no_enciende</code> con pitidos de la BIOS, y <code>pantalla_negra</code> con <code>lineas_en_pantalla</code> (caso base de GPU defectuosa).</p>
+
+<h2>5. Reporte de pruebas de estrés</h2>
+<p>Se ejecutaron con <code>swipl -q -f none -g correr_pruebas -t halt pruebas_estres.pl</code> (salida íntegra en <code>evidencia_estres.txt</code>) y con <code>py pruebas.py</code>.</p>
+<table>
+<tr><th>Grupo</th><th>Objetivo</th><th>Casos</th><th>Resultado</th></tr>
+<tr><td>A</td><td>Contradicciones que deben bloquearse (los 6 tipos, incluida una escondida entre 7 hechos válidos)</td><td>20</td><td class="ok">20 / 20</td></tr>
+<tr><td>B</td><td>Combinaciones coherentes que NO deben bloquearse (falsos positivos)</td><td>13</td><td class="ok">13 / 13</td></tr>
+<tr><td>C</td><td>Entradas ambiguas en lenguaje natural (negación, «sí enciende», 200 °C, dos equipos, mayúsculas y signos)</td><td>15</td><td class="ok">15 / 15</td></tr>
+<tr><td>D</td><td>Robustez: no es lista, lista vacía, desconocidos, variable suelta, <code>ausente/1</code> inventado, duplicados, temperaturas negativas o decimales</td><td>8</td><td class="ok">8 / 8</td></tr>
+<tr><td>E</td><td>Propiedades sobre los 171 pares de los 19 síntomas: estado siempre válido; contradicción ⇒ cero diagnósticos y cero sospechosos; independencia del orden; <code>analizar_caso</code> = <code>consultar_caso</code>; los 19 síntomas juntos se bloquean; 600 hechos en 0,06 s</td><td>6</td><td class="ok">6 / 6</td></tr>
+<tr><th colspan="2">Total</th><th>62</th><th class="ok">62 / 62</th></tr>
+</table>
+
+<h3>Muestra de casos (entrada → resultado)</h3>
+<table>
+<tr><th>Entrada</th><th>Hechos / estado</th></tr>
+<tr><td>«mi pc no prende pero los ventiladores giran»</td><td><code>[no_enciende, ventiladores_giran]</code> → <b>entrada_contradictoria</b></td></tr>
+<tr><td>«mi pc no huele a quemado»</td><td><code>[ausente(olor_quemado)]</code> → datos_insuficientes (antes: <code>olor_quemado</code>)</td></tr>
+<tr><td>«la cpu esta a 200 grados»</td><td><code>[temp_cpu(200)]</code> → <b>entrada_contradictoria</b> (lectura_imposible)</td></tr>
+<tr><td>«mi portátil de 2 años y mi escritorio de 9 años»</td><td><code>[equipo(portatil,2), equipo(escritorio,9)]</code> → <b>entrada_contradictoria</b></td></tr>
+<tr><td>«no enciende ni huele a quemado»</td><td><code>[no_enciende, ausente(olor_quemado)]</code> → datos_insuficientes</td></tr>
+<tr><td><code>no_enciende, olor_quemado, prueba(fuente_con_probador, falla)</code></td><td>ok → <code>fuente_poder_defectuosa</code> (sin cambios)</td></tr>
+</table>
+
+<h3>Hallazgos de la auditoría y su corrección</h3>
+<table>
+<tr><th>#</th><th>Hallazgo</th><th>Corrección</th></tr>
+<tr><td>1</td><td>La DCG ignoraba la negación: «no huele a quemado» se interpretaba como <code>olor_quemado</code> y podía producir un diagnóstico erróneo.</td><td>Nuevo no terminal <code>sintoma_negado//1</code> que produce <code>ausente(S)</code>; no es evidencia, pero permite detectar <code>afirmado_y_negado</code>.</td></tr>
+<tr><td>2</td><td>Temperaturas > 150 °C y segundas antigüedades («… y mi escritorio de 9 años») se descartaban en silencio.</td><td>La DCG acepta hasta 500 °C y emite un <code>equipo/2</code> por antigüedad; la parte I los marca como imposibles o duplicados.</td></tr>
+<tr><td>3</td><td>Regresión propia durante el desarrollo: la regla «pantalla negra ⊥ líneas en pantalla» bloqueaba el caso base de GPU.</td><td>Se acotó a «pantalla negra ⊥ pantalla azul» y el caso de GPU quedó como prueba de falsos positivos (b13).</td></tr>
+</table>
+
+<h2>6. Sustentación: puntos de modificación en vivo</h2>
+<table>
+<tr><th>Integrante</th><th>Ajuste típico</th><th>Dónde</th></tr>
+<tr><td>A – Motor simbólico</td><td>Cambiar un corte <code>!</code>, una regla de consistencia o la gramática DCG</td><td><code>clasificar_item/2</code>, <code>estado_caso/2</code>, <code>cobertura/3</code> · <code>incompatible_dirigido/3</code> · <code>hecho//1</code>, <code>sintoma//1</code>, <code>sintoma_negado//1</code></td></tr>
+<tr><td>B – Integración</td><td>Captura de la interfaz o visualización de la traza</td><td><code>preparar_entrada()</code>, <code>mostrar_resultado()</code> y <code>presentar_hecho()</code> en <code>main.py</code> · <code>analizar_caso()</code> y <code>formatear_respuesta()</code> en <code>motor_inferencia.py</code></td></tr>
+</table>
+<p>Ejemplo de ajuste en vivo (A): añadir <code>incompatible_dirigido(ventilador_detenido, temp_cpu_baja, 'Motivo').</code> y reejecutar <code>pruebas_estres.pl</code>. La auditoría cruzada se puede ensayar tecleando oraciones en el campo libre de la interfaz y comparando con las tablas anteriores.</p>
+
+<h2>7. Limitaciones</h2>
+<ul>
+<li>La negación cubre «no/ni + síntoma» (con hasta dos palabras de enlace) y «sí enciende»; construcciones como «no es que huela a quemado» no se interpretan.</li>
+<li>Las incompatibilidades son del dominio y conservadoras; un experto puede agregar más cláusulas en <code>incompatible_dirigido/3</code>.</li>
+<li>Los códigos de pitidos varían según el fabricante del BIOS; el sistema es educativo y no reemplaza a un técnico.</li>
+<li>La suite <code>pruebas.py</code> requiere Python, PySwip y SWI-Prolog; <code>pruebas_estres.pl</code> solo requiere SWI-Prolog.</li>
+</ul>
+
+</body>
+</html>
