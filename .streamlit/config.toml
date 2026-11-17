@@ -5,9 +5,9 @@ fileWatcherType = "none"
 gatherUsageStats = false
 
 [theme]
-base = "dark"
-primaryColor = "#40d9ff"
-backgroundColor = "#07111f"
-secondaryBackgroundColor = "#101f32"
-textColor = "#e7f2ff"
-font = "sans serif"
+base = "light"
+primaryColor = "#0a246a"
+backgroundColor = "#c9c5b8"
+secondaryBackgroundColor = "#e4e1d6"
+textColor = "#000000"
+font = "monospace"

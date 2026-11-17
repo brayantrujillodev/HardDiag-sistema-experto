@@ -181,8 +181,64 @@ Resultado: APROBADO
       hechos: ['led_encendido', 'ventilador_detenido', 'bloqueos']  no reconocidas: []  -> APROBADO
  DCG: 10 de 10 oraciones analizadas correctamente
 ========================================================================
+ CONSISTENCIA (Entregable 4): contradicciones y entradas ambiguas
+  -- Contradicciones que Prolog debe bloquear --
+  [sintomas_incompatibles] no_enciende, ventiladores_giran: APROBADO
+      estado=entrada_contradictoria, tipos=['sintomas_incompatibles']
+  [sintomas_incompatibles] pantalla_negra, pantalla_azul: APROBADO
+      estado=entrada_contradictoria, tipos=['sintomas_incompatibles']
+  [sintomas_incompatibles] ventilador_detenido, ventilador_ruidoso: APROBADO
+      estado=entrada_contradictoria, tipos=['sintomas_incompatibles']
+  [sintomas_incompatibles] disco_no_encontrado, prueba(smart_disco, ok): APROBADO
+      estado=entrada_contradictoria, tipos=['sintomas_incompatibles']
+  [afirmado_y_negado] olor_quemado, ausente(olor_quemado): APROBADO
+      estado=entrada_contradictoria, tipos=['afirmado_y_negado']
+  [lectura_imposible] temp_cpu(500): APROBADO
+      estado=entrada_contradictoria, tipos=['lectura_imposible']
+  [lecturas_discrepantes] temp_cpu(40), temp_cpu(99): APROBADO
+      estado=entrada_contradictoria, tipos=['lecturas_discrepantes']
+  [nivel_discordante] temp_cpu(97), dato(temperatura_cpu, normal): APROBADO
+      estado=entrada_contradictoria, tipos=['nivel_discordante']
+  [datos_duplicados] prueba(cambio_cable, ok), prueba(cambio_cable, falla): APROBADO
+      estado=entrada_contradictoria, tipos=['datos_duplicados']
+  [datos_duplicados] equipo(portatil, 2), equipo(escritorio, 9): APROBADO
+      estado=entrada_contradictoria, tipos=['datos_duplicados']
+  -- Entradas ambiguas en lenguaje natural (DCG) --
+  «mi pc no huele a quemado»: APROBADO
+      hechos=['ausente(olor_quemado)'], estado=datos_insuficientes
+  «el computador si enciende»: APROBADO
+      hechos=['ausente(no_enciende)'], estado=datos_insuficientes
+  «mi pc no prende pero los ventiladores giran»: APROBADO
+      hechos=['no_enciende', 'ventiladores_giran'], estado=entrada_contradictoria
+  «huele a quemado y no huele a quemado»: APROBADO
+      hechos=['olor_quemado', 'ausente(olor_quemado)'], estado=entrada_contradictoria
+  «la cpu esta a 200 grados»: APROBADO
+      hechos=['temp_cpu(200)'], estado=entrada_contradictoria
+  «mi portatil de 2 años y mi escritorio de 9 años»: APROBADO
+      hechos=['equipo(portatil,2)', 'equipo(escritorio,9)'], estado=entrada_contradictoria
+  «no enciende ni huele a quemado»: APROBADO
+      hechos=['no_enciende', 'ausente(olor_quemado)'], estado=datos_insuficientes
+  -- Coherentes (no deben bloquearse) --
+  no_enciende, led_encendido: APROBADO
+      estado=datos_insuficientes
+  no_enciende, prueba(fuente_con_probador, ok), pitidos(un_largo_tres_cortos): APROBADO
+      estado=ok
+  temp_cpu(90), temp_cpu(95), ventilador_ruidoso: APROBADO
+      estado=ok
+  temp_cpu(97), dato(temperatura_cpu, critica): APROBADO
+      estado=datos_insuficientes
+  olor_quemado, ausente(lentitud): APROBADO
+      estado=datos_insuficientes
+  -- analizar_caso/2 también bloquea --
+  analizar_caso([no_enciende, ventiladores_giran]): APROBADO
+      Estado: entrada_contradictoria - Hechos incompatibles: no se emite diagnóstico. | Contradicciones detectadas (corrige los datos y vuelve a consultar): |   - [sintomas_incompatibles] no_enciende + ventiladores_giran: Si el equipo no enciende no puede presentar «ventiladores_giran».
+  -- Batería de estrés en Prolog (pruebas_estres.pl) --
+  swipl pruebas_estres.pl: APROBADO
+      === RESULTADO: 62 de 62 verificaciones aprobadas ===
+ CONSISTENCIA: 24 de 24 verificaciones aprobadas
+========================================================================
  PERSISTENCIA: regla aprendida en caliente y reinicios
-  Copia temporal de la base: C:\Users\sadti\AppData\Local\Temp\harddiag_prueba_fm8efqup\base_conocimiento.pl
+  Copia temporal de la base: C:\Users\sadti\AppData\Local\Temp\harddiag_prueba_c1v6_d8n\base_conocimiento.pl
   [crear] Crear regla en caliente (assertz + escritura en el .pl): APROBADO
       diagnósticos antes: []
       diagnósticos después: ['fuente_sobrecargada']
@@ -198,5 +254,5 @@ Resultado: APROBADO
       diagnósticos: []
  PERSISTENCIA: 4 de 4 fases aprobadas
 ========================================================================
- RESUMEN: 34 de 34 casos aprobados
+ RESUMEN: 58 de 58 casos aprobados
 ========================================================================
