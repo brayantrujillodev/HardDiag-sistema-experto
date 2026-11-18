@@ -146,6 +146,17 @@ CASOS = [
                      "diagnosticos": [("gpu_defectuosa", "alta")],
                      "niveles_danio": ["grave"]},
     },
+    {
+        "id": 12,
+        "tipo": "Error de BIOS sin prueba de fuente (R27)",
+        "objetivo": "Diagnosticar la placa base con certeza media cuando hay "
+                    "error de BIOS, pitidos de placa y sin energía, aunque la "
+                    "fuente no se haya probado.",
+        "entrada": "error_bios, no_enciende, pitidos(un_largo_tres_cortos)",
+        "esperado": {"estado": "ok",
+                     "diagnosticos": [("placa_base_defectuosa", "alta")],
+                     "niveles_danio": ["grave"]},
+    },
 ]
 
 

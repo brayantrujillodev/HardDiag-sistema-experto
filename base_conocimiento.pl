@@ -501,6 +501,15 @@ placa_base_sospechosa(E) :-
 placa_base_defectuosa(E) :-
     placa_base_sospechosa(E).
 
+% R27. Sin la prueba de la fuente, un error de BIOS junto con pitidos que
+%      apuntan a la placa y sin energía vuelve probable la placa base. La
+%      fuente no queda descartada, por eso la certeza será solo media.
+placa_base_probable(E) :-
+    sin_energia(E),
+    observado(E, error_bios),
+    pitidos_error(E, placa_base),
+    \+ prueba(E, fuente_con_probador, falla).
+
 %% -----------------------------------------------------------------------------
 %%  NIVEL 3 – CONCLUSIÓN FINAL
 %%  Determinan el diagnóstico o la recomendación integrando las reglas
@@ -523,6 +532,10 @@ diagnostico(E, gpu_defectuosa, media) :-
     \+ descartado(E, gpu_defectuosa).
 diagnostico(E, placa_base_defectuosa, alta) :-
     placa_base_defectuosa(E),
+    \+ descartado(E, placa_base_defectuosa).
+diagnostico(E, placa_base_defectuosa, media) :-
+    placa_base_probable(E),
+    \+ placa_base_defectuosa(E),
     \+ descartado(E, placa_base_defectuosa).
 diagnostico(E, refrigeracion_deficiente, alta) :-
     falla_refrigeracion(E),
@@ -974,6 +987,9 @@ traza_diagnostico(Id, gpu_defectuosa, ['R2', 'R6', 'R11', 'R21']) :-
 traza_diagnostico(Id, placa_base_defectuosa,
                   ['R1', 'R4', 'R19', 'R20', 'R21']) :-
     placa_base_defectuosa(Id).
+traza_diagnostico(Id, placa_base_defectuosa, ['R1', 'R4', 'R27', 'R21']) :-
+    placa_base_probable(Id),
+    \+ placa_base_defectuosa(Id).
 traza_diagnostico(Id, refrigeracion_deficiente, Reglas) :-
     once(falla_refrigeracion(Id)),
     regla_temperatura(Id, ReglaTemperatura),
@@ -1098,6 +1114,12 @@ negacion_traza(Id, fuente_poder_defectuosa, Reglas, Texto) :-
     \+ prueba(Id, fuente_con_probador, falla),
     format(atom(Texto),
            'R9b: \\+ prueba(fuente_con_probador, falla) tuvo éxito.',
+           []).
+negacion_traza(Id, placa_base_defectuosa, Reglas, Texto) :-
+    memberchk('R27', Reglas),
+    \+ prueba(Id, fuente_con_probador, falla),
+    format(atom(Texto),
+           'R27: \\+ prueba(fuente_con_probador, falla) tuvo éxito; la fuente no se descartó, por eso la certeza es media.',
            []).
 negacion_traza(Id, ram_defectuosa, Reglas, Texto) :-
     memberchk('R13', Reglas),
