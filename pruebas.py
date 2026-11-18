@@ -148,14 +148,25 @@ CASOS = [
     },
     {
         "id": 12,
-        "tipo": "Error de BIOS sin prueba de fuente (R27)",
-        "objetivo": "Diagnosticar la placa base con certeza media cuando hay "
-                    "error de BIOS, pitidos de placa y sin energía, aunque la "
-                    "fuente no se haya probado.",
-        "entrada": "error_bios, no_enciende, pitidos(un_largo_tres_cortos)",
+        "tipo": "Error de BIOS prevalece sobre otros diagnósticos (R28b)",
+        "objetivo": "Con un error de BIOS reportado, aunque haya no_enciende, "
+                    "pitidos de placa y la fuente pase la prueba, solo se "
+                    "entrega la solución de la BIOS.",
+        "entrada": "error_bios, no_enciende, prueba(fuente_con_probador, ok), "
+                   "pitidos(un_largo_tres_cortos)",
         "esperado": {"estado": "ok",
-                     "diagnosticos": [("placa_base_defectuosa", "alta")],
-                     "niveles_danio": ["grave"]},
+                     "diagnosticos": [("bios_mal_configurada", "baja")],
+                     "niveles_danio": ["leve"]},
+    },
+    {
+        "id": 13,
+        "tipo": "Error de BIOS como diagnóstico (R28)",
+        "objetivo": "Un error de BIOS reportado produce el diagnóstico de "
+                    "configuración de BIOS incorrecta con su solución.",
+        "entrada": "error_bios",
+        "esperado": {"estado": "ok",
+                     "diagnosticos": [("bios_mal_configurada", "baja")],
+                     "niveles_danio": ["leve"]},
     },
 ]
 

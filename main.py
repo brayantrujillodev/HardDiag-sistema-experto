@@ -49,6 +49,7 @@ NOMBRES_DIAGNOSTICO = {
     "ram_defectuosa": "Memoria RAM defectuosa",
     "disco_fallando": "Disco de almacenamiento fallando",
     "bateria_cmos_agotada": "Batería CMOS agotada",
+    "bios_mal_configurada": "Configuración de la BIOS incorrecta",
 }
 DESCRIPCIONES_SINTOMA = {
     "no_enciende": "El equipo no enciende",
@@ -155,6 +156,15 @@ GUIAS_SOLUCION = {
             "Al encender de nuevo, ajusta la fecha y hora si es necesario.",
         ],
         "ayuda": "En algunos portátiles la batería no es de fácil acceso; consulta el manual o a un técnico.",
+    },
+    "bios_mal_configurada": {
+        "pasos": [
+            "Anota el mensaje exacto del error que muestra la BIOS.",
+            "Entra a la BIOS (Supr, F2 o F10 al encender) y carga los valores predeterminados (Load Optimized Defaults).",
+            "Revisa que el disco de arranque aparezca primero en el orden de arranque, guarda y reinicia.",
+            "Si el error persiste, restablece la CMOS o actualiza la BIOS con el procedimiento del fabricante.",
+        ],
+        "ayuda": "No interrumpas una actualización de BIOS: si el equipo se apaga a mitad del proceso puede quedar inservible.",
     },
 }
 NOMBRES_COMPONENTE = {

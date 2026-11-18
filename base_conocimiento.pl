@@ -190,7 +190,8 @@ catalogo_gravedades([
     ram_mal_asentada-baja,
     ram_defectuosa-media,
     disco_fallando-alta,
-    bateria_cmos_agotada-baja
+    bateria_cmos_agotada-baja,
+    bios_mal_configurada-baja
 ]).
 
 %% -----------------------------------------------------------------------------
@@ -217,7 +218,8 @@ catalogo_acciones([
     ram_mal_asentada-'Reasentar el módulo de RAM y limpiar los contactos.',
     ram_defectuosa-'Reemplazar el módulo de memoria RAM defectuoso.',
     disco_fallando-'Respaldar la información de inmediato y reemplazar el disco.',
-    bateria_cmos_agotada-'Cambiar la batería CMOS (CR2032) de la placa base.'
+    bateria_cmos_agotada-'Cambiar la batería CMOS (CR2032) de la placa base.',
+    bios_mal_configurada-'Entrar a la BIOS, cargar los valores predeterminados y guardar; si persiste, restablecer la CMOS o actualizar la BIOS.'
 ]).
 
 %% -----------------------------------------------------------------------------
@@ -237,7 +239,8 @@ catalogo_evidencia([
     ram_defectuosa-[pitidos(tres_cortos), pantalla_azul,
                     prueba(reasentar_ram, no_resuelve)],
     disco_fallando-[arranque_lento, ruido_clic, prueba(smart_disco, falla)],
-    bateria_cmos_agotada-[hora_incorrecta, equipo_antiguo]
+    bateria_cmos_agotada-[hora_incorrecta, equipo_antiguo],
+    bios_mal_configurada-[error_bios]
 ]).
 
 %% -----------------------------------------------------------------------------
@@ -479,6 +482,10 @@ bateria_cmos_agotada(E) :-
     observado(E, hora_incorrecta),
     equipo_antiguo(E).
 
+% R28. Configuración de BIOS incorrecta: el usuario reporta un error en la BIOS.
+bios_con_error(E) :-
+    observado(E, error_bios).
+
 % R18. Diagnósticos DESCARTADOS por una prueba que los contradice.
 %      Se usan con \+ en el nivel 3 (criterio de exclusión).
 descartado(E, fuente_poder_defectuosa) :-
@@ -500,15 +507,6 @@ placa_base_sospechosa(E) :-
 % R20. La combinación de señales de R19 permite diagnosticar la placa base.
 placa_base_defectuosa(E) :-
     placa_base_sospechosa(E).
-
-% R27. Sin la prueba de la fuente, un error de BIOS junto con pitidos que
-%      apuntan a la placa y sin energía vuelve probable la placa base. La
-%      fuente no queda descartada, por eso la certeza será solo media.
-placa_base_probable(E) :-
-    sin_energia(E),
-    observado(E, error_bios),
-    pitidos_error(E, placa_base),
-    \+ prueba(E, fuente_con_probador, falla).
 
 %% -----------------------------------------------------------------------------
 %%  NIVEL 3 – CONCLUSIÓN FINAL
@@ -533,10 +531,6 @@ diagnostico(E, gpu_defectuosa, media) :-
 diagnostico(E, placa_base_defectuosa, alta) :-
     placa_base_defectuosa(E),
     \+ descartado(E, placa_base_defectuosa).
-diagnostico(E, placa_base_defectuosa, media) :-
-    placa_base_probable(E),
-    \+ placa_base_defectuosa(E),
-    \+ descartado(E, placa_base_defectuosa).
 diagnostico(E, refrigeracion_deficiente, alta) :-
     falla_refrigeracion(E),
     \+ descartado(E, refrigeracion_deficiente).
@@ -552,6 +546,9 @@ diagnostico(E, disco_fallando, alta) :-
 diagnostico(E, bateria_cmos_agotada, alta) :-
     bateria_cmos_agotada(E),
     \+ descartado(E, bateria_cmos_agotada).
+diagnostico(E, bios_mal_configurada, media) :-
+    bios_con_error(E),
+    \+ descartado(E, bios_mal_configurada).
 % R26. Diagnósticos aprendidos en caliente desde el modo experto (parte H).
 %      Cada regla_aprendida/8 lista las condiciones que deben cumplirse y las
 %      que la excluyen. \+ se evalúa con E y las exclusiones ya instanciadas.
@@ -821,7 +818,8 @@ estado_caso(_, ok).
 
 % recolectar_diagnosticos(+Id, +Validos, -Ordenados)
 recolectar_diagnosticos(Id, Validos, Ordenados) :-
-    findall(D-C, diagnostico(Id, D, C), Crudos),
+    findall(D-C, diagnostico(Id, D, C), Todos),
+    solo_bios_si_hay_error(Todos, Crudos),
     sort(Crudos, Unicos),                    % sort/2 elimina duplicados
     findall(P-Fila,
             ( member(D-C, Unicos),
@@ -829,6 +827,12 @@ recolectar_diagnosticos(Id, Validos, Ordenados) :-
             Pares),
     sort(1, @>=, Pares, Descendente),        % mayor prioridad primero
     pairs_values(Descendente, Ordenados).
+
+% R28b. Un error de BIOS reportado se resuelve solo con la solución de la BIOS:
+%       si ese diagnóstico existe, es el único que se entrega.
+solo_bios_si_hay_error(Todos, [bios_mal_configurada-C]) :-
+    memberchk(bios_mal_configurada-C, Todos), !.
+solo_bios_si_hay_error(Todos, Todos).
 
 fila_diagnostico(Id, Validos, D, C, Prioridad,
                  [D, C, Sev, NivelDanio, Prioridad, Cob, Accion]) :-
@@ -987,9 +991,6 @@ traza_diagnostico(Id, gpu_defectuosa, ['R2', 'R6', 'R11', 'R21']) :-
 traza_diagnostico(Id, placa_base_defectuosa,
                   ['R1', 'R4', 'R19', 'R20', 'R21']) :-
     placa_base_defectuosa(Id).
-traza_diagnostico(Id, placa_base_defectuosa, ['R1', 'R4', 'R27', 'R21']) :-
-    placa_base_probable(Id),
-    \+ placa_base_defectuosa(Id).
 traza_diagnostico(Id, refrigeracion_deficiente, Reglas) :-
     once(falla_refrigeracion(Id)),
     regla_temperatura(Id, ReglaTemperatura),
@@ -1008,6 +1009,8 @@ traza_diagnostico(Id, disco_fallando, ['R6', 'R16', 'R21']) :-
 traza_diagnostico(Id, bateria_cmos_agotada, [ReglaAntiguedad, 'R17', 'R21']) :-
     once(bateria_cmos_agotada(Id)),
     regla_antiguedad(Id, ReglaAntiguedad).
+traza_diagnostico(Id, bios_mal_configurada, ['R28', 'R21']) :-
+    bios_con_error(Id).
 traza_diagnostico(Id, Diagnostico, ['R26']) :-
     regla_aprendida(Diagnostico, _, _, Requeridas, _, _, _, _),
     cumple_condiciones(Id, Requeridas).
@@ -1115,12 +1118,6 @@ negacion_traza(Id, fuente_poder_defectuosa, Reglas, Texto) :-
     format(atom(Texto),
            'R9b: \\+ prueba(fuente_con_probador, falla) tuvo éxito.',
            []).
-negacion_traza(Id, placa_base_defectuosa, Reglas, Texto) :-
-    memberchk('R27', Reglas),
-    \+ prueba(Id, fuente_con_probador, falla),
-    format(atom(Texto),
-           'R27: \\+ prueba(fuente_con_probador, falla) tuvo éxito; la fuente no se descartó, por eso la certeza es media.',
-           []).
 negacion_traza(Id, ram_defectuosa, Reglas, Texto) :-
     memberchk('R13', Reglas),
     \+ pitidos_error(Id, memoria_ram),
@@ -1218,6 +1215,7 @@ componente_diagnostico(ram_mal_asentada, memoria_ram).
 componente_diagnostico(ram_defectuosa, memoria_ram).
 componente_diagnostico(disco_fallando, almacenamiento).
 componente_diagnostico(bateria_cmos_agotada, placa_base).
+componente_diagnostico(bios_mal_configurada, placa_base).
 componente_diagnostico(Diagnostico, Componente) :-
     regla_aprendida(Diagnostico, _, Componente, _, _, _, _, _).
 

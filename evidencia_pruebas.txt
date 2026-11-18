@@ -145,17 +145,30 @@ Obtenido :
          Acción: Reemplazar la tarjeta gráfica o llevar el equipo a un técnico.
 Resultado: APROBADO
 
-Caso 12: Error de BIOS sin prueba de fuente (R27)
+Caso 12: Error de BIOS prevalece sobre otros diagnósticos (R28b)
 ------------------------------------------------------------------------
-Objetivo : Diagnosticar la placa base con certeza media cuando hay error de BIOS, pitidos de placa y sin energía, aunque la fuente no se haya probado.
-Entrada  : error_bios, no_enciende, pitidos(un_largo_tres_cortos)
-Consulta : consultar_texto('error_bios, no_enciende, pitidos(un_largo_tres_cortos)', Respuesta).
-Esperado : estado = ok; diagnósticos = placa_base_defectuosa (alta); niveles de daño = grave
+Objetivo : Con un error de BIOS reportado, aunque haya no_enciende, pitidos de placa y la fuente pase la prueba, solo se entrega la solución de la BIOS.
+Entrada  : error_bios, no_enciende, prueba(fuente_con_probador, ok), pitidos(un_largo_tres_cortos)
+Consulta : consultar_texto('error_bios, no_enciende, prueba(fuente_con_probador, ok), pitidos(un_largo_tres_cortos)', Respuesta).
+Esperado : estado = ok; diagnósticos = bios_mal_configurada (baja); niveles de daño = leve
 Obtenido :
     Estado: ok - Diagnóstico generado.
     Diagnósticos (de mayor a menor prioridad):
-      1. placa_base_defectuosa  |  nivel de daño: grave  |  severidad: alta  |  certeza: media  |  prioridad: 367  |  evidencia: 67%
-         Acción: Llevar el equipo a un técnico para revisar y reparar la placa base.
+      1. bios_mal_configurada  |  nivel de daño: leve  |  severidad: baja  |  certeza: media  |  prioridad: 200  |  evidencia: 100%
+         Acción: Entrar a la BIOS, cargar los valores predeterminados y guardar; si persiste, restablecer la CMOS o actualizar la BIOS.
+Resultado: APROBADO
+
+Caso 13: Error de BIOS como diagnóstico (R28)
+------------------------------------------------------------------------
+Objetivo : Un error de BIOS reportado produce el diagnóstico de configuración de BIOS incorrecta con su solución.
+Entrada  : error_bios
+Consulta : consultar_texto('error_bios', Respuesta).
+Esperado : estado = ok; diagnósticos = bios_mal_configurada (baja); niveles de daño = leve
+Obtenido :
+    Estado: ok - Diagnóstico generado.
+    Diagnósticos (de mayor a menor prioridad):
+      1. bios_mal_configurada  |  nivel de daño: leve  |  severidad: baja  |  certeza: media  |  prioridad: 200  |  evidencia: 100%
+         Acción: Entrar a la BIOS, cargar los valores predeterminados y guardar; si persiste, restablecer la CMOS o actualizar la BIOS.
 Resultado: APROBADO
 
 ========================================================================
@@ -251,7 +264,7 @@ Resultado: APROBADO
  CONSISTENCIA: 24 de 24 verificaciones aprobadas
 ========================================================================
  PERSISTENCIA: regla aprendida en caliente y reinicios
-  Copia temporal de la base: C:\Users\sadti\AppData\Local\Temp\harddiag_prueba_4nn_7tpj\base_conocimiento.pl
+  Copia temporal de la base: C:\Users\sadti\AppData\Local\Temp\harddiag_prueba_iql_uwf0\base_conocimiento.pl
   [crear] Crear regla en caliente (assertz + escritura en el .pl): APROBADO
       diagnósticos antes: []
       diagnósticos después: ['fuente_sobrecargada']
@@ -267,5 +280,5 @@ Resultado: APROBADO
       diagnósticos: []
  PERSISTENCIA: 4 de 4 fases aprobadas
 ========================================================================
- RESUMEN: 59 de 59 casos aprobados
+ RESUMEN: 60 de 60 casos aprobados
 ========================================================================
