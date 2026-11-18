@@ -78,6 +78,7 @@ sintoma_catalogo(apagados_repentinos,  'El equipo se apaga de repente').
 sintoma_catalogo(olor_quemado,         'Hay olor a quemado').
 sintoma_catalogo(pitidos_arranque,     'Se oyen pitidos al arrancar').
 sintoma_catalogo(hora_incorrecta,      'La fecha y hora se pierden').
+sintoma_catalogo(error_bios,           'Aparece un error en la BIOS').
 sintoma_catalogo(reinicios_aleatorios, 'El equipo se reinicia solo').
 sintoma_catalogo(ventilador_ruidoso,   'El ventilador hace ruido excesivo').
 sintoma_catalogo(ventilador_detenido,  'El ventilador no gira').
@@ -104,6 +105,7 @@ relaciones_sintoma([
     pitidos_arranque-memoria_ram,
     pitidos_arranque-placa_base,
     hora_incorrecta-placa_base,
+    error_bios-placa_base,
     reinicios_aleatorios-procesador,
     reinicios_aleatorios-fuente_poder,
     ventilador_ruidoso-procesador,
@@ -1611,6 +1613,8 @@ vocabulario(largo,         [largo, larga, largos]).
 vocabulario(corto,         [corto, cortos, corta, cortas]).
 vocabulario(repetido,      [repetidos, repetido, seguidos, continuos,
                             constantes]).
+vocabulario(error,         [error, errores, fallo, fallos]).
+vocabulario(bios,          [bios, uefi, cmos, setup]).
 vocabulario(hora,          [hora, fecha, reloj, horario]).
 vocabulario(verbo_hora,    [pierde, pierden, perdio, desconfigura,
                             desconfiguran, borra, borran, atrasa, atrasan,
@@ -1727,6 +1731,9 @@ alias_sintoma(pantalla_negra, 'pantalla no se ve').
 alias_sintoma(pantalla_negra, 'sin imagen').
 alias_sintoma(pantalla_negra, 'no da video').
 alias_sintoma(pantalla_negra, 'monitor sin señal').
+alias_sintoma(error_bios, 'error en la bios').
+alias_sintoma(error_bios, 'error de bios').
+alias_sintoma(error_bios, 'mensaje de error de la bios').
 alias_sintoma(pantalla_azul, 'pantalla azul').
 alias_sintoma(pantalla_azul, 'pantalla en azul').
 alias_sintoma(pantalla_azul, 'pantallazo azul').
@@ -1957,6 +1964,10 @@ sintoma(olor_quemado) -->
 % --- Síntomas: placa base y BIOS -------------------------------------------------
 sintoma(pitidos_arranque) -->
     opcional(numero(_)), palabra(pitido).
+sintoma(error_bios) -->
+    palabra(error), opcional([en]), det_opt, palabra(bios).
+sintoma(error_bios) -->
+    palabra(bios), opcional(palabra(error)).
 sintoma(hora_incorrecta) -->
     se_opt, palabra(verbo_hora), det_opt, palabra(hora), y_hora_opt.
 sintoma(hora_incorrecta) -->

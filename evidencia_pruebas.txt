@@ -238,7 +238,7 @@ Resultado: APROBADO
  CONSISTENCIA: 24 de 24 verificaciones aprobadas
 ========================================================================
  PERSISTENCIA: regla aprendida en caliente y reinicios
-  Copia temporal de la base: C:\Users\sadti\AppData\Local\Temp\harddiag_prueba_c1v6_d8n\base_conocimiento.pl
+  Copia temporal de la base: C:\Users\sadti\AppData\Local\Temp\harddiag_prueba_hzdvgf9b\base_conocimiento.pl
   [crear] Crear regla en caliente (assertz + escritura en el .pl): APROBADO
       diagnósticos antes: []
       diagnósticos después: ['fuente_sobrecargada']

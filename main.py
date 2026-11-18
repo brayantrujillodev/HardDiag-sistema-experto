@@ -57,6 +57,7 @@ DESCRIPCIONES_SINTOMA = {
     "olor_quemado": "Hay olor a quemado",
     "pitidos_arranque": "Se oyen pitidos al arrancar",
     "hora_incorrecta": "La fecha y la hora se pierden",
+    "error_bios": "Aparece un error en la BIOS",
     "reinicios_aleatorios": "El equipo se reinicia solo",
     "ventilador_ruidoso": "El ventilador hace ruido excesivo",
     "ventilador_detenido": "El ventilador no gira",

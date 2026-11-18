@@ -383,8 +383,8 @@ def _caso_inventario_completo(motor):
     return (
         len(inventario) == 13
         and len(inventario["Componentes"]) == 6
-        and len(inventario["Síntomas reportables"]) == 19
-        and len(inventario["Relaciones síntoma-componente"]) == 22
+        and len(inventario["Síntomas reportables"]) == 20
+        and len(inventario["Relaciones síntoma-componente"]) == 23
         and len(inventario["Casos de ejemplo"]) == 8
         and all(inventario.values())
     )
